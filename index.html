@@ -6,8 +6,8 @@
   <title>LandedIQ — Know your true margin after tariffs</title>
   <meta name="description" content="Upload your product list, get landed cost, true margin and recommended price per SKU. Built for U.S. import sellers." />
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-  <!-- Plausible: replace data-domain with your domain -->
-  <script defer data-domain="YOUR_DOMAIN.com" src="https://plausible.io/js/script.js"></script>
+  <!-- Plausible (쿠키리스). 도메인이 바뀌면 data-domain 도 함께 바꿀 것 -->
+  <script defer data-domain="iq-rose.vercel.app" src="https://plausible.io/js/script.js"></script>
   <style>
     html { scroll-behavior: smooth; }
     details > summary { list-style: none; cursor: pointer; }
@@ -20,7 +20,11 @@
        변형 카피(A/B/C)는 landed-cost-smoke-test-v1.md 확정 카피로 교체하세요. -->
   <script>
     const CONFIG = {
-      FORMSPREE_ID: 'YOUR_FORMSPREE_ID', // https://formspree.io/f/<ID>
+      // 이메일은 자체 DB(leads 테이블, RLS insert 전용)로 들어간다.
+      // 아래 두 값은 공개용이다 — publishable 키는 앱 번들에도 이미 실려 있고,
+      // leads 는 select 정책이 없어 이 키로 읽을 수 없다.
+      SUPABASE_URL: 'https://hwcfjxwdmmlydnrfyjqk.supabase.co',
+      SUPABASE_ANON_KEY: 'sb_publishable_UdPyuqjon43B2htgbfkofg_ildGExbo',
       VARIANTS: {
         a: { // Angle A: 관세 격변 → 마진 불안 (fear)
           headline: 'Tariffs changed again.\nDo you still know your real margin?',
@@ -277,6 +281,28 @@
   </footer>
 
   <script>
+    // ── 리드 저장 (Supabase leads, RLS insert 전용) ──────────────
+    //
+    // 순수 INSERT 로 보낸다. Prefer: resolution=ignore-duplicates 를 쓰면
+    // PostgREST 가 upsert 로 처리해 RLS 를 다시 걸고 42501 로 막힌다.
+    // 통과시키려면 anon 에게 UPDATE 정책을 열어야 하는데, 그러면 남의 행을
+    // 덮어쓸 수 있다. 중복은 409 를 성공으로 취급해 해결한다
+    // (unique(email, intent) — 같은 주소가 같은 경로로 다시 눌러도 에러가 아니다).
+    async function saveLead(fields) {
+      const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/leads`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: CONFIG.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify(fields),
+      })
+      if (res.status === 409) return // 이미 등록된 주소 — 사용자에겐 성공이다
+      if (!res.ok) throw new Error(`leads ${res.status}: ${(await res.text()).slice(0, 200)}`)
+    }
+
     // ── 변형 결정: /a /b /c (로컬 미리보기는 ?v=a|b|c) ──
     const seg = location.pathname.split('/').filter(Boolean).pop() || ''
     const variant = CONFIG.VARIANTS[seg] ? seg : (CONFIG.VARIANTS[new URLSearchParams(location.search).get('v')] ? new URLSearchParams(location.search).get('v') : 'a')
@@ -307,12 +333,17 @@
         btn.textContent = 'Joining…'
         const data = Object.fromEntries(new FormData(form).entries())
         try {
-          const res = await fetch(`https://formspree.io/f/${CONFIG.FORMSPREE_ID}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify(data),
+          await saveLead({
+            email: data.email,
+            intent: data.intent || 'hero',
+            variant,
+            page: location.pathname,
+            utm_source: utm.utm_source || null,
+            utm_medium: utm.utm_medium || null,
+            utm_campaign: utm.utm_campaign || null,
+            utm_term: utm.utm_term || null,
+            utm_content: utm.utm_content || null,
           })
-          if (!res.ok) throw new Error(`Formspree ${res.status}`)
           // ── Plausible 이벤트 1개 (이메일 제출 시) ──
           window.plausible?.('email_signup', {
             props: { variant, intent: data.intent, utm_source: utm.utm_source, utm_campaign: utm.utm_campaign },
@@ -339,7 +370,7 @@
 
     // ── "See a sample report" → 이메일 수집 후 **즉시** 샘플 열람 ──
     // 이메일 발송 인프라가 아직 없다. 기다리게 만들지 말고 바로 보여주되,
-    // 주소는 (Formspree 가 설정돼 있으면) 백그라운드로 남긴다.
+    // 주소는 백그라운드로 leads 에 남긴다 — 수집 실패가 열람을 막지 않는다.
     document.getElementById('sample-form')?.addEventListener('submit', async (e) => {
       e.preventDefault()
       const form = e.currentTarget
@@ -353,21 +384,18 @@
       note.textContent = 'Opened in a new tab — print to PDF to keep a copy.'
       note.className = 'mt-2 text-xs text-emerald-600'
 
-      if (CONFIG.FORMSPREE_ID && CONFIG.FORMSPREE_ID !== 'YOUR_FORMSPREE_ID') {
-        const params = new URLSearchParams(location.search)
-        try {
-          await fetch(`https://formspree.io/f/${CONFIG.FORMSPREE_ID}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({
-              email,
-              intent: 'sample_report',
-              variant,
-              page: location.pathname,
-              ...Object.fromEntries(UTM_KEYS.map((k) => [k, params.get(k) || ''])),
-            }),
-          })
-        } catch { /* 열람은 이미 됐으므로 수집 실패는 사용자에게 알리지 않는다 */ }
+      const params = new URLSearchParams(location.search)
+      try {
+        await saveLead({
+          email,
+          intent: 'sample_report',
+          variant,
+          page: location.pathname,
+          ...Object.fromEntries(UTM_KEYS.map((k) => [k, params.get(k) || null])),
+        })
+        window.plausible?.('sample_report', { props: { variant, utm_source: utm.utm_source } })
+      } catch {
+        /* 리포트는 이미 열렸다 — 수집 실패로 사용자를 막지 않는다 */
       }
       btn.disabled = false
     })
