@@ -29,3 +29,6 @@ smoke-*.png
 
 # secrets — supabase.txt holds the DB password in plaintext
 supabase.txt
+
+# supabase CLI cache
+supabase/.temp/

@@ -13,12 +13,14 @@
  *
  * 실행: npm run golden
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import Papa from 'papaparse'
+import { createClient } from '@supabase/supabase-js'
 import { computeShipment, dutyBreakdownLabel } from '../src/lib/calc/engine'
 import { formatHts, normalizeHts } from '../src/lib/calc/rates'
+import { LAYER_LABEL } from '../src/lib/calc/types'
 import type {
   CalcItem,
   CalcShipment,
@@ -28,12 +30,122 @@ import type {
   SkuResult,
 } from '../src/lib/calc/types'
 import { classifyItems } from '../src/lib/classify/client'
-import { CONFIDENCE_THRESHOLD } from '../src/lib/classify/types'
-import type { HtsCandidate } from '../src/lib/classify/types'
+import type { ClassifyBackend } from '../src/lib/classify/client'
+import { CONFIDENCE_THRESHOLD, sanitizeCandidates } from '../src/lib/classify/types'
+import type { ClassifyBatchResult, ClassifyItemInput, HtsCandidate } from '../src/lib/classify/types'
 import { parseItemsCsv } from '../src/lib/csv/parseItems'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
+
+// ── CLI 인자 ─────────────────────────────────────────────────────
+const argv = process.argv.slice(2)
+const arg = (name: string) => argv.find((a) => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=')
+const OUT_FILE = arg('out') ?? 'test-results.md'
+const FORCED_BACKEND = arg('backend') as 'edge' | 'anthropic' | 'mock' | undefined
+
+/** .env 로드 (tsx 는 vite 처럼 자동 주입하지 않는다) */
+function loadDotEnv(): Record<string, string> {
+  const f = join(root, '.env')
+  if (!existsSync(f)) return {}
+  const out: Record<string, string> = {}
+  for (const line of readFileSync(f, 'utf-8').split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/i)
+    if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '')
+  }
+  return out
+}
+const dotenv = loadDotEnv()
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? dotenv.VITE_SUPABASE_URL
+const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? dotenv.VITE_SUPABASE_ANON_KEY
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY ?? dotenv.ANTHROPIC_API_KEY
+
+/**
+ * Edge Function 의 시스템 프롬프트·모델을 소스에서 직접 읽는다.
+ * 로컬 anthropic 경로가 배포본과 다른 프롬프트를 쓰면 §검증1 이 무의미해지므로
+ * 프롬프트 원본은 항상 supabase/functions/classify/index.ts 하나뿐이다.
+ */
+function edgeFunctionPrompt(): { system: string; model: string } {
+  const src = readFileSync(join(root, 'supabase/functions/classify/index.ts'), 'utf-8')
+  const sys = src.match(/const SYSTEM_PROMPT = `([\s\S]*?)`\r?\n/)
+  const mdl = src.match(/const DEFAULT_MODEL = '([^']+)'/)
+  if (!sys || !mdl) throw new Error('Edge Function 소스에서 SYSTEM_PROMPT/DEFAULT_MODEL 을 추출하지 못했다')
+  return { system: sys[1], model: process.env.CLASSIFY_MODEL ?? mdl[1] }
+}
+
+/** 배포된 classify 함수가 살아 있는지 확인 (§1 요구: 200 응답 확인) */
+async function probeEdge(): Promise<{ ok: boolean; status: number | string }> {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return { ok: false, status: 'env 없음' }
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/classify`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        apikey: SUPABASE_KEY,
+        authorization: `Bearer ${SUPABASE_KEY}`,
+      },
+      body: JSON.stringify({
+        items: [{ id: 'probe', product_name: 'probe', description_or_material: 'probe', origin_country: 'CN' }],
+      }),
+    })
+    return { ok: res.status === 200, status: res.status }
+  } catch (e) {
+    return { ok: false, status: String(e) }
+  }
+}
+
+/** ANTHROPIC_API_KEY 로 직접 호출 (Edge Function 미배포 시 대체 경로, 프롬프트는 동일) */
+async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<ClassifyBatchResult[]> {
+  const { system, model } = edgeFunctionPrompt()
+  const out: ClassifyBatchResult[] = []
+  for (let i = 0; i < items.length; i += 10) {
+    const batch = items.slice(i, i + 10)
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY!,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 2048,
+        system,
+        messages: [
+          {
+            role: 'user',
+            content: `Classify these products:\n${JSON.stringify(
+              batch.map((b) => ({
+                item_id: b.id,
+                product_name: b.product_name,
+                description_or_material: b.description_or_material,
+                origin_country: b.origin_country,
+              })),
+              null,
+              2,
+            )}`,
+          },
+        ],
+      }),
+    })
+    if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`)
+    const data = await res.json()
+    const text: string = (data.content ?? [])
+      .filter((b: { type: string }) => b.type === 'text')
+      .map((b: { text: string }) => b.text)
+      .join('')
+    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
+    const parsed = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1))
+    const byId = new Map<string, HtsCandidate[]>()
+    for (const r of parsed.results ?? []) byId.set(String(r.item_id), sanitizeCandidates(r.candidates))
+    out.push({
+      results: batch.map((b) => ({ item_id: b.id, candidates: byId.get(b.id) ?? [] })),
+      meta: { model, prompt_version: 'v1' },
+      raw_output: data,
+    })
+  }
+  return out
+}
 
 // ── 계획서 §검증1 잠정 정답 (6자리) ──────────────────────────────
 const TARGETS: Record<string, { six: string[]; note: string }> = {
@@ -44,7 +156,7 @@ const TARGETS: Record<string, { six: string[]; note: string }> = {
   'TSH-01': { six: ['610910'], note: '면 니트 티셔츠' },
   'SPK-01': { six: ['851822', '851762'], note: '논쟁 품목 — 판례가 갈림' },
   'MAT-01': { six: ['950691'], note: '운동용구 판례 존재 (3926 아님)' },
-  'BRD-01': { six: ['441912'], note: '대나무 주방용품 — 아래 주석 참조' },
+  'BRD-01': { six: ['441911'], note: '대나무 도마 (v1 의 4419.12 = 젓가락 오답 정정)' },
   'CSE-01': { six: ['392690'], note: '플라스틱 제품 기타' },
   'UTL-01': { six: ['392410'], note: '플라스틱(실리콘) 주방용품' },
 }
@@ -140,18 +252,41 @@ async function main() {
     process.exit(1)
   }
 
+  // ── 백엔드 결정 ──────────────────────────────────────────────
+  // 우선순위: 배포된 Edge Function(제품 경로) > ANTHROPIC_API_KEY 직접 호출 > mock
+  const probe = FORCED_BACKEND === 'mock' || FORCED_BACKEND === 'anthropic' ? { ok: false, status: 'skip' } : await probeEdge()
+  let backend: 'edge' | 'anthropic' | 'mock'
+  if (FORCED_BACKEND) backend = FORCED_BACKEND
+  else if (probe.ok) backend = 'edge'
+  else if (ANTHROPIC_KEY) backend = 'anthropic'
+  else backend = 'mock'
+
+  if (backend === 'edge' && (!SUPABASE_URL || !SUPABASE_KEY)) throw new Error('edge 백엔드인데 VITE_SUPABASE_* 가 없다')
+  if (backend === 'anthropic' && !ANTHROPIC_KEY) throw new Error('anthropic 백엔드인데 ANTHROPIC_API_KEY 가 없다')
+  const isReal = backend !== 'mock'
+
+  console.log(`분류 백엔드: ${backend}${backend === 'edge' ? '' : `  (edge probe: HTTP ${probe.status})`}`)
+
   // ── 분류 (앱과 동일 경로: 배치10 × 동시4) ─────────────────────
   const withIds = parsed.map((p, i) => ({ ...p, id: `it-${i}` }))
+  const inputs: ClassifyItemInput[] = withIds.map((p) => ({
+    id: p.id,
+    product_name: p.product_name,
+    description_or_material: p.description_or_material,
+    origin_country: p.origin_country,
+  }))
+
   const t0 = performance.now()
-  const batches = await classifyItems(
-    { kind: 'mock' },
-    withIds.map((p) => ({
-      id: p.id,
-      product_name: p.product_name,
-      description_or_material: p.description_or_material,
-      origin_country: p.origin_country,
-    })),
-  )
+  let batches: ClassifyBatchResult[]
+  if (backend === 'anthropic') {
+    batches = await classifyViaAnthropic(inputs)
+  } else {
+    const be: ClassifyBackend =
+      backend === 'edge'
+        ? { kind: 'edge', supabase: createClient(SUPABASE_URL!, SUPABASE_KEY!) }
+        : { kind: 'mock' }
+    batches = await classifyItems(be, inputs)
+  }
   const classifyMs = performance.now() - t0
   const model = batches[0]?.meta.model ?? 'unknown'
   const promptVersion = batches[0]?.meta.prompt_version ?? 'unknown'
@@ -242,8 +377,16 @@ async function main() {
   p()
   p('| 검증 | 상태 | 이유 |')
   p('|---|---|---|')
-  p(`| §검증1 HTS 분류 | **집행 불가** | \`classify\` Edge Function 미배포(HTTP 404), \`ANTHROPIC_API_KEY\` 없음. 아래 점수는 **LLM이 아니라 \`src/lib/classify/mock.ts\` 키워드 정규식 매처**의 점수다. 제품의 심장은 아직 측정되지 않았다. |`)
-  p('| §검증1 정답 확정 | **미완** | 계획서가 요구한 CBP CROSS 판례 확인을 수행하지 않았다. 아래 정답은 계획서의 잠정값 그대로이며 **채점 금지 상태**다. |')
+  if (isReal) {
+    p(
+      `| §검증1 HTS 분류 | **집행됨** | 실 분류기 \`${model}\` (${backend === 'edge' ? '배포된 Edge Function' : 'ANTHROPIC_API_KEY 직접 호출, 프롬프트는 Edge Function 소스 그대로'}) 로 측정했다. |`,
+    )
+  } else {
+    p(
+      `| §검증1 HTS 분류 | **집행 불가** | \`classify\` Edge Function 미배포(edge probe: HTTP ${probe.status}), \`ANTHROPIC_API_KEY\` 없음. 아래 점수는 **LLM이 아니라 \`src/lib/classify/mock.ts\` 키워드 정규식 매처**의 점수다. 제품의 심장은 아직 측정되지 않았다. |`,
+    )
+  }
+  p('| §검증1 정답 확정 | **미완** | 계획서가 요구한 CBP CROSS 판례 확인을 수행하지 않았다. 아래 정답은 계획서의 잠정값(BRD-01 은 v2 정정본)이며 **최종 채점 전 CROSS 확인 필요**. |')
   p('| §검증2-1·2 세율 대조 | **자동 실패** | 원장 행 자체가 `Test seed — re-verify at hts.usitc.gov` / `SAMPLE value — admin must confirm manually` 로 표기된 미검증 값이다. USITC·USTR 대조는 사람이 해야 한다 (스펙 §4 자동 스크래핑 금지). |')
   p('| §검증2-3 계산 재검증 | **집행됨 ✅** | 결정론 코드라 여기서 나온 숫자는 그대로 신뢰 가능. 아래 수식 대입값으로 엑셀 대조하면 된다. |')
   p('| §검증2-4 원산지 스코핑 | **집행됨 ✅** | 아래 assert 결과 참조. |')
@@ -273,7 +416,9 @@ async function main() {
   p()
   p('| 항목 | 값 |')
   p('|---|---|')
-  p(`| 분류 백엔드 | \`${model}\` (prompt ${promptVersion}) — **mock, LLM 아님** |`)
+  p(
+    `| 분류 백엔드 | \`${model}\` (prompt ${promptVersion}) — ${isReal ? `**실 분류기 (${backend})**` : '**mock, LLM 아님**'} |`,
+  )
   p(`| 분류 소요 | ${classifyMs.toFixed(1)} ms |`)
   p(`| confidence 임계 | ${CONFIDENCE_THRESHOLD} (미만 → needs_review, 자동확정 금지 §1-3) |`)
   p(`| 원장 행 수 | ${LEDGER.length} (base ${BASE_LEDGER.length} + 보충 ${SUPPLEMENT.length}) |`)
@@ -289,7 +434,7 @@ async function main() {
 
   p('---')
   p()
-  p('## §검증1 — HTS 분류 (mock 분류기 기준, 참고치)')
+  p(`## §검증1 — HTS 분류 (${isReal ? `실 분류기 \`${model}\`` : 'mock 분류기 기준, 참고치'})`)
   p()
   p('| SKU | 후보 1 | 후보 2 | 후보 3 | 상태 | 계획서 잠정정답 | 포함? |')
   p('|---|---|---|---|---|---|---|')
@@ -301,17 +446,21 @@ async function main() {
     p(`| ${s.sku}${TRAP_SKUS.includes(s.sku) ? ' 🎯' : ''} | ${c(0)} | ${c(1)} | ${c(2)} | ${s.status} | ${tgt} | ${mark} |`)
   }
   p()
-  p(`**mock 점수: ${hits}/10** (통과 기준 7/10) · 함정 문항(🎯) ${trapHits}/2`)
+  p(
+    `**${isReal ? '점수' : 'mock 점수'}: ${hits}/10** (통과 기준 7/10 → ${hits >= 7 ? '**통과**' : '**미달**'}) · 함정 문항(🎯) ${trapHits}/2`,
+  )
   p()
   p(`needs_review 로 격리된 건: ${gated.filter((g) => g.status === 'needs_review').map((g) => g.sku).join(', ') || '없음'} — confidence < ${CONFIDENCE_THRESHOLD} 자동확정 금지(§1-3)가 동작함을 확인.`)
   p()
-  p('> 다시 강조: 이 점수는 mock 키워드 매처의 점수다. **제품이 실제로 쓰는 LLM 분류기 점수가 아니다.**')
-  p('> Edge Function 배포 + API 키 설정 후 재실행해야 §검증1 이 성립한다.')
-  p()
+  if (!isReal) {
+    p('> 다시 강조: 이 점수는 mock 키워드 매처의 점수다. **제품이 실제로 쓰는 LLM 분류기 점수가 아니다.**')
+    p('> Edge Function 배포 + API 키 설정 후 재실행해야 §검증1 이 성립한다.')
+    p()
+  }
 
   p('### 정답 키 자체의 의심 지점')
   p()
-  p('- **BRD-01 → 4419.12 는 오답 가능성이 높다.** HS 4419 하위는 4419.11 = 빵판·도마 및 유사 판(대나무), 4419.12 = **젓가락**(대나무), 4419.19 = 기타. "Bamboo kitchen cutting board" 는 4419.11 로 보이며, 계획서의 4419.12 는 젓가락 소호다. CROSS 확정 시 이 항목부터 볼 것.')
+  p('- **BRD-01: 4419.12 → 4419.11 로 정정됨 (v2).** HS 4419 하위는 4419.11 = 빵판·도마 및 유사 판(대나무), 4419.12 = **젓가락**(대나무), 4419.19 = 기타. v1 정답 키의 4419.12 는 젓가락 소호였다. CROSS 로 최종 확인 필요.')
   p('- **LMP-01 → 9405.2x** 는 9405.21(LED 전용) / 9405.29(기타)로 갈린다. "LED table lamp" 는 9405.21 쪽이나, USB 충전 포트가 있어 복합기능 논쟁 여지가 있다.')
   p('- **TUM-01 → 9617.00** 은 계획서 지적대로 함정이다. mock 분류기는 7323(스테인리스)도 아닌 **7013(유리제품)** 으로 틀렸다 — 텍스트의 "tumbler" 만 보고 소재를 무시한 전형적 오류.')
   p()
@@ -374,27 +523,33 @@ async function main() {
   p(`**SAMPLE(예시값) 301·IEEPA 에 의존하는 SKU**: ${sampleUse.join(', ') || '없음'}`)
   p()
 
-  if (silentPartialMiss.length > 0) {
-    p('### 🐛 발견된 코드 결함 — 부분 미스가 무경고로 지나감')
-    p()
-    p('`src/lib/calc/engine.ts` 의 경고 조건이 **모든** 레이어 미매칭일 때만 걸린다:')
-    p()
-    p('```ts')
-    p('if (dutyLayers.every((l) => l.matched_hts === null)) {')
-    p("  warnings.push('HTS not found in rate ledger — duty calculated as $0')")
-    p('}')
-    p('```')
-    p()
-    p('따라서 301·IEEPA 는 매칭되고 base MFN 만 원장에 없는 경우 — 실무에서 가장 흔한 상황 —')
-    p('duty 가 조용히 과소계상되고 리포트에는 아무 표시도 남지 않는다. 사용자는 틀린 숫자를 정상으로 믿는다.')
-    p()
-    p('| SKU | 미매칭 레이어 | 경고 |')
-    p('|---|---|---|')
-    for (const s of silentPartialMiss) p(`| ${s.sku} | ${s.missed.join(', ')} | **없음** ⚠️ |`)
-    p()
-    p('수정 방향: `every` → 레이어별 미매칭을 각각 경고하되, 원산지상 기대되지 않는 레이어(비중국산의 301 등)는 제외.')
-    p()
+  p('### 레이어별 미스 경고 (v1 결함 수정 확인)')
+  p()
+  p('v1 에서는 `engine.ts` 가 **모든** 레이어 미매칭일 때만 경고해서, 301·IEEPA 는 잡히고')
+  p('base MFN 만 없는 흔한 경우 duty 가 조용히 과소계상됐다. v2 는 레이어별로 경고하되')
+  p('그 원산지에 애초에 적용되지 않는 레이어(비중국산의 301)는 제외한다.')
+  p()
+  p('| SKU | 원산지 | 미매칭 레이어 | 리포트·UI 에 노출되는 경고 |')
+  p('|---|---|---|---|')
+  for (const r of resultB.items) {
+    const g = gated.find((x) => x.sku === r.sku)!
+    const missed = r.duty_layers.filter((l) => l.matched_hts === null).map((l) => LAYER_LABEL[l.layer])
+    p(
+      `| ${r.sku} | ${g.origin_country} | ${missed.join(', ') || '없음'} | ${r.warnings.length > 0 ? r.warnings.map((w) => `⚠ ${w}`).join('<br>') : '—'} |`,
+    )
   }
+  p()
+  if (silentPartialMiss.length > 0) {
+    p(`> ⚠️ **아직 무경고로 지나가는 건이 있다**: ${silentPartialMiss.map((s) => s.sku).join(', ')} — 수정이 불완전하다.`)
+  } else {
+    p('> 기대되는 레이어의 미스는 모두 경고로 노출된다. 무경고 과소계상 없음 ✅')
+    p('>')
+    p('> 비중국산(BAG-01/VN, TSH-01/IN)의 301 미스는 의도적으로 경고하지 않는다 — 원장에 그 원산지로')
+    p('> 적용될 수 있는 301 행이 없으므로 "누락"이 아니라 "해당 없음"이다.')
+  }
+  p()
+  p('회귀 테스트: [tests/engine.warnings.test.ts](tests/engine.warnings.test.ts)')
+  p()
 
 
   p('### 선적 총계')
@@ -559,7 +714,11 @@ async function main() {
   p()
   p('| 검증 | 결과 |')
   p('|---|---|')
-  p('| §검증1 HTS 분류 | ⛔ **미집행** — 실 분류기(Edge Function) 미배포. mock 참고치 ' + `${hits}/10` + ' |')
+  p(
+    isReal
+      ? `| §검증1 HTS 분류 | ${hits >= 7 ? '✅ **통과**' : '❌ **미달**'} — \`${model}\` ${hits}/10 (기준 7/10), 함정 ${trapHits}/2 |`
+      : `| §검증1 HTS 분류 | ⛔ **미집행** — 실 분류기(Edge Function) 미배포. mock 참고치 ${hits}/10 |`,
+  )
   p('| §검증2-1·2 세율 대조 | ❌ **실패** — 원장에 검증된 행 0건 (전부 test seed / SAMPLE / placeholder) |')
   p('| §검증2-3 계산 정확도 | ✅ **통과** — 배부 보존·수식 일관성 확인. 위 수식 대입값으로 엑셀 대조 가능 |')
   p('| §검증2-4 원산지 스코핑 | ' + (originViolations.length === 0 ? '✅ **통과**' : '❌ **실패**') + ' |')
@@ -573,16 +732,20 @@ async function main() {
   p('4. 신규 계정으로 §검증3 수동 수행')
   p()
 
-  writeFileSync(join(root, 'test-results.md'), L.join('\n'), 'utf-8')
+  writeFileSync(join(root, OUT_FILE), L.join('\n'), 'utf-8')
 
   // ── 콘솔 요약 ────────────────────────────────────────────────
   console.log('── 골든 테스트 결과 ────────────────────────────')
-  console.log(`분류 백엔드:        ${model} (mock — LLM 아님)`)
-  console.log(`§검증1 (mock 참고): ${hits}/10, 함정 ${trapHits}/2  → 실 분류기 미배포로 판정 불가`)
+  console.log(`분류 백엔드:        ${model} (${isReal ? backend : 'mock — LLM 아님'})`)
+  console.log(
+    isReal
+      ? `§검증1:             ${hits}/10 (기준 7/10 → ${hits >= 7 ? 'PASS' : 'FAIL'}), 함정 ${trapHits}/2`
+      : `§검증1 (mock 참고): ${hits}/10, 함정 ${trapHits}/2  → 실 분류기 미배포로 판정 불가`,
+  )
   console.log(`§검증2-3 배부 보존: freight ${ok(fSum, resultB.totals.freight_pool)} / mpf ${ok(mSum, resultB.totals.mpf_shipment)} / hmf ${ok(hSum, resultB.totals.hmf_shipment)}`)
   console.log(`§검증2-4 원산지:    ${originViolations.length === 0 ? 'PASS' : `FAIL — ${originViolations.join(', ')}`}`)
   console.log(`원장 검증된 행:     0 / ${LEDGER.length}  → §검증2-1·2 실패 (데이터 미확정)`)
-  console.log(`→ test-results.md`)
+  console.log(`→ ${OUT_FILE}`)
 
   if (originViolations.length > 0) process.exit(1)
 }

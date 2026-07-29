@@ -76,6 +76,28 @@ export function lookupLayerRate(
   return { layer, rate: best.ad_valorem_rate, matched_hts: best.hts_code }
 }
 
+/**
+ * 해당 원산지에 "적용될 수 있는" 레이어 집합.
+ *
+ * 원장에 그 원산지로 적용 가능한 행(origin_country = 해당국 또는 null)이 기준일 기준
+ * 하나라도 있는 레이어만 기대 대상으로 본다. 예를 들어 301 행이 CN 으로만 존재하면
+ * VN·IN 에는 301 이 애초에 기대되지 않으므로 "원장에 없음" 경고를 내면 안 된다.
+ *
+ * 코드에 'CN' 같은 값을 하드코딩하지 않고 원장에서 유도한다 (스펙 §1-4).
+ * 한계: 원장에 그 국가 행이 아예 없으면 "해당 없음"과 "관리자 미입력"을 구분할 수 없다.
+ */
+export function expectedLayers(ledger: RateRow[], origin: string, asOf: string): Set<RateLayer> {
+  const org = origin.trim().toUpperCase()
+  const out = new Set<RateLayer>()
+  for (const row of ledger) {
+    if (!inEffect(row, asOf)) continue
+    const rowOrigin = row.origin_country ? row.origin_country.trim().toUpperCase() : null
+    if (rowOrigin !== null && rowOrigin !== org) continue
+    out.add(row.layer)
+  }
+  return out
+}
+
 /** 3개 레이어 전체 조회. duty_rate_total = Σ 레이어 (스펙 §4). */
 export function lookupDutyLayers(
   ledger: RateRow[],

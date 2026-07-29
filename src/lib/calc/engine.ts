@@ -19,8 +19,9 @@ import type {
   ShipmentResult,
   SkuResult,
 } from './types'
+import { LAYER_LABEL } from './types'
 import { clamp } from './money'
-import { lookupDutyLayers, normalizeHts } from './rates'
+import { expectedLayers, lookupDutyLayers, normalizeHts } from './rates'
 
 export function trueMargin(
   currentPrice: number,
@@ -90,6 +91,17 @@ export function computeShipment(
       dutyRateTotal = dutyLayers.reduce((a, l) => a + l.rate, 0)
       if (dutyLayers.every((l) => l.matched_hts === null)) {
         warnings.push('HTS not found in rate ledger — duty calculated as $0')
+      } else {
+        // 부분 미스는 조용히 과소계상된다 — 레이어별로 경고한다.
+        // 단 그 원산지에 애초에 적용되지 않는 레이어(비중국산의 301 등)는 제외.
+        const expected = expectedLayers(ledger, it.origin_country, shipment.rate_as_of)
+        for (const l of dutyLayers) {
+          if (l.matched_hts === null && expected.has(l.layer)) {
+            warnings.push(
+              `No ${LAYER_LABEL[l.layer]} rate for this HTS in the rate ledger — treated as 0%, duty may be understated`,
+            )
+          }
+        }
       }
     } else {
       dutyLayers = dutyLayers.map((l) => ({ ...l, rate: 0, matched_hts: null }))

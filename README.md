@@ -60,11 +60,20 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 
 | 검증 | 결과 |
 |---|---|
-| §1 HTS 분류 | ⛔ 미집행 — `classify` Edge Function 미배포(404). mock 참고치 4/10 |
+| §1 HTS 분류 | ⛔ 미집행 — `classify` Edge Function 미배포. mock 참고치 4/10 |
 | §2-1·2 세율 대조 | ❌ 실패 — 원장에 검증된 행 0/67 (전부 test seed·SAMPLE·placeholder) |
 | §2-3 계산 정확도 | ✅ 통과 — 배부 보존·MPF 캡 3경로 확인 |
 | §2-4 원산지 스코핑 | ✅ 통과 — [tests/golden.origin.test.ts](tests/golden.origin.test.ts) |
 | §3 E2E | ⛔ 미집행 — UI 수동 수행 필요 |
+
+분류 백엔드는 자동 선택된다: **배포된 Edge Function**(제품 경로) → `ANTHROPIC_API_KEY` 직접 호출 → mock.
+강제 지정·출력 파일 변경:
+
+```bash
+npm run golden                                    # 자동 선택
+npm run golden -- --backend=edge --out=test-results-v2.md
+npm run golden -- --backend=anthropic             # ANTHROPIC_API_KEY 필요 (프롬프트는 Edge Function 소스에서 읽음)
+```
 
 `supabase/seed/hts_seed_golden_supplement.csv` 는 골든 실행을 완결시키기 위한 **자리표시자**입니다
 (9617·9405.21·9506.91·4419.11/12). USITC 확인 전까지 어떤 판단에도 쓰지 마세요.
