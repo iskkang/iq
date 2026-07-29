@@ -33,6 +33,15 @@ jobs:
         run: npm run check
 
       - name: 프로덕션 빌드
+        # CI 에는 Vercel env 가 없다. 빌드 검사(scripts/check-build.ts)가 %VITE_*%
+        # 치환을 요구하므로 형식만 맞는 더미를 준다 — 여기서 확인하는 것은
+        # "빌드가 통과하는가"이지 "값이 맞는가"가 아니다.
+        #
+        # 값 검증은 Vercel 빌드에서 일어난다. 거기에 env 가 없으면 같은 검사가
+        # exit 1 을 내고 **배포 자체가 막힌다**. 조용히 데모로 떨어지지 않는다.
+        env:
+          VITE_SUPABASE_URL: https://ciplaceholder.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-placeholder-not-a-real-key
         run: npm run build
 
       # ── 드리프트 가드 ────────────────────────────────────────────
