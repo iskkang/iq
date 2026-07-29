@@ -1,0 +1,8 @@
+{
+  "//": "Edge Function 타입체크 전용 설정. npm run check:edge 가 이걸 쓴다. 저장소 루트에 node_modules 가 있어 deno 가 그걸 먼저 보는데, npm: 의존이 거기 없어 해석에 실패한다. auto 로 두면 deno 가 필요한 것만 따로 받는다.",
+  "nodeModulesDir": "auto",
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.window", "esnext"]
+  }
+}

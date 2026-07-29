@@ -30,6 +30,7 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 |---|---|
 | `npm run test` | 단위 테스트 123건 (§4 계산식 + 골든 10건 + CSV 파싱 + 301 원산지 스코핑 + 분류 파이프라인) |
 | `npm run golden` | 골든 테스트 실행 (`golden-test-products.csv` → `test-results.md`) |
+| `npm run check` | **커밋 전 이것만 돌리면 된다** — tsc(src) + tsc(scripts·tests) + deno check(Edge) + vitest + oxlint |
 | `npm run bench` | §6-2 벤치마크 (`--sample=N` 비용, `--concurrency=N` 웨이브 실측) |
 | `npm run hts:ch99` | HTSUS Ch.99 → 301·IEEPA 관리자 확정 워크시트 |
 | `npm run hts:fetch` | USITC 공식 HTS 카탈로그 수집 → `data/hts_lines.json` |
@@ -169,6 +170,28 @@ npm run hts:seed     # → Supabase hts_lines + rate_ledger base_mfn (종가세 
 작업은 `classification_jobs` 큐에 들어가고 pg_cron 워커가 처리한다. 브라우저를 닫아도
 계속 돌고, 결과는 아이템 단위로 저장되므로 도착하는 대로 표에 나타난다.
 설치·운용은 [docs/async-worker-setup.md](docs/async-worker-setup.md).
+
+### 검사 범위 — 왜 `npm run check` 가 생겼나
+
+한동안 **`scripts/` 와 `supabase/functions/` 가 어떤 검사에도 걸리지 않았다.**
+`tsconfig.app` 은 `src` 만, `tsconfig.node` 는 `vite.config.ts` **한 파일만** 본다.
+tsx 는 타입을 지우고 실행하고, oxlint 는 정의되지 않은 변수를 잡지 않는다.
+
+결과는 두 가지로 나타났다:
+
+- 배포된 분류기의 재시도 경로가 정의되지 않은 변수(`userB`)를 참조한 채 살아남았다.
+  `deno check` 는 이걸 `TS2304` 로 즉시 잡는다 — 검사를 안 돌렸을 뿐이다.
+- `golden-run.ts` 의 타입 오류가 3분짜리 LLM 실행 뒤 런타임에서야 터졌다.
+  한 번 도는 데 실제 API 비용이 드는 스크립트라 재시도 한 번이 그대로 시간이 된다.
+
+`npm run check` 가 네 계층을 한 번에 본다. 40초 걸린다.
+
+| 계층 | 도구 | 대상 |
+|---|---|---|
+| 앱 | `tsc -b` | `src/` |
+| 스크립트·테스트 | `tsc -p tsconfig.scripts.json` | `scripts/`, `tests/`, `supabase/seed/` |
+| Edge Function | `deno check` | `supabase/functions/` (Deno 런타임이라 tsc 로는 못 본다) |
+| 동작·스타일 | `vitest`, `oxlint` | 전체 |
 
 ### 관세 프로그램 (발효일 기반)
 

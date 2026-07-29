@@ -1,15 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatHts, isValidHts10, normalizeHts } from '../src/lib/calc/rates'
 
-const row = (partial: Partial<RateRow>): RateRow => ({
-  hts_code: '6912004810',
-  origin_country: null,
-  layer: 'base_mfn',
-  ad_valorem_rate: 0.098,
-  effective_from: '2025-01-01',
-  effective_to: null,
-  ...partial,
-})
 
 describe('normalizeHts / formatHts', () => {
   it('숫자만 남긴다', () => {
