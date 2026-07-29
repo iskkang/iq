@@ -250,6 +250,10 @@
           <p class="mt-2 text-sm text-slate-600">Base MFN rates are seeded from the official USITC Harmonized Tariff Schedule. Additional duty programs — Section 301 and whatever replaces or supplements it — are maintained in a rate ledger with effective dates, so a program that ends stops applying on the right day instead of quietly lingering. Every report shows which layers were applied and the as-of date they were read.</p>
         </details>
         <details class="rounded-xl border border-slate-200 p-4">
+          <summary class="flex items-center justify-between font-medium">What happens when a tariff code gets restructured?<span class="text-slate-400">+</span></summary>
+          <p class="mt-2 text-sm text-slate-600">We say so, explicitly. Tariff schedules get renumbered — a line is split, merged or retired, while the duty list that referenced the old number is never updated. A tool that looks up the old code returns a confident wrong answer. We flag those lines as <b>unverified</b> and show the duty as unconfirmed rather than guessing, so you know which SKUs need a broker's eyes. Right now that's 110 lines out of roughly 11,300.</p>
+        </details>
+        <details class="rounded-xl border border-slate-200 p-4">
           <summary class="flex items-center justify-between font-medium">I don't know my HTS codes. Is that a problem?<span class="text-slate-400">+</span></summary>
           <p class="mt-2 text-sm text-slate-600">That's the point — you don't need to. AI suggests 2–3 candidates per product from your product name and material, with confidence scores. Already have codes from your broker's entry documents? Paste them in and skip the step.</p>
         </details>
