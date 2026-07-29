@@ -41,7 +41,20 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
       throwIf(error, 'Sign-in failed')
     },
     async signUp(email, password) {
-      const { data, error } = await supabase.auth.signUp({ email, password })
+      // 확인 메일의 링크가 돌아올 곳을 **명시한다.**
+      //
+      // 이걸 안 넘기면 Supabase 는 프로젝트의 Site URL 을 쓴다. 실측했더니 그 값이
+      // 기본값 http://localhost:3000 이었다 — 가입은 성공하고 메일도 도착하는데
+      // 링크가 localhost 로 가서 아무도 확인을 마칠 수 없었다. 조용히 실패하는
+      // 종류라 눈에 띄지 않는다.
+      //
+      // 단, Supabase 는 허용 목록(Redirect URLs)에 없는 주소를 무시하고 Site URL 로
+      // 되돌린다. 대시보드에 현재 도메인을 등록해 두어야 이 값이 실제로 쓰인다.
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: `${window.location.origin}/app` },
+      })
       throwIf(error, 'Sign-up failed')
       return { needsEmailConfirm: !data.session }
     },
