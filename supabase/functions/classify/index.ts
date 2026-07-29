@@ -5,7 +5,7 @@
  *   - 자유 생성 금지. 호 후보 → USITC 실제 라인 보기 중 선택. 보기 밖이면 재시도 1회
  *   - temperature 0
  *   - 정규화 해시로 분류 캐시 (동일 입력 재호출 금지)
- *   - auto_confirmed = k=3 만장일치 AND 원장 실존. confidence 는 참고 표기로 강등
+ *   - 자동확정 없음 — 사람 확인 전에는 전부 suggested. 투표 결과는 리뷰 큐 정렬 신호
  *
  * 배포: supabase functions deploy classify
  * 시크릿: supabase secrets set ANTHROPIC_API_KEY=... [CLASSIFY_MODEL=...]
@@ -17,7 +17,7 @@ import {
   TEMPERATURE,
   VOTES,
   cacheKey,
-  decideStatus,
+  assessSuggestion,
   extractJson,
   parseStageA,
   parseStageB,
@@ -169,7 +169,7 @@ Deno.serve(async (req: Request) => {
       }
 
       const fresh = outcomes.map((o) => {
-        const { status, reason } = decideStatus(o, o.consensus ? inLedger.has(o.consensus) : false)
+        const { reason } = assessSuggestion(o, o.consensus ? inLedger.has(o.consensus) : false)
         // 후보 목록: 투표에서 나온 선택들을 중복 제거해 UI 에 그대로 노출
         const byCode = new Map<string, Selection>()
         for (const s of o.selections) if (!byCode.has(s.hts_code)) byCode.set(s.hts_code, s)
@@ -188,7 +188,6 @@ Deno.serve(async (req: Request) => {
             votes: o.votes,
             in_ledger: o.consensus ? inLedger.has(o.consensus) : false,
             out_of_options: o.out_of_options,
-            status,
             reason,
           },
         }

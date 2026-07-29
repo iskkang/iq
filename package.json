@@ -13,7 +13,8 @@
     "golden": "tsx scripts/golden-run.ts",
     "seed:rates": "tsx supabase/seed/seed-rates.ts",
     "hts:fetch": "tsx scripts/fetch-hts-catalog.ts",
-    "hts:seed": "tsx scripts/seed-hts-lines.ts"
+    "hts:seed": "tsx scripts/seed-hts-lines.ts",
+    "hts:ch99": "tsx scripts/fetch-ch99.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",

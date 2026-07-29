@@ -2,7 +2,8 @@ import type { AllocationBasis, FeeSettings, RateRow, TransportMode } from '../ca
 import type { ClassifyBatchResult, ClassifyConsensus, HtsCandidate } from '../classify/types'
 import type { ParsedItemRow } from '../csv/parseItems'
 
-export type ClassificationStatus = 'pending' | 'needs_review' | 'auto_confirmed' | 'user_confirmed'
+export type { ClassificationStatus } from '../classify/status'
+import type { ClassificationStatus } from '../classify/status'
 
 export interface Shipment {
   id: string
@@ -34,8 +35,11 @@ export interface Item {
   hts_source: 'llm' | 'manual' | null
   classification_status: ClassificationStatus
   candidates: HtsCandidate[]
-  /** k=3 투표 결과·자동확정 근거 (v2 파이프라인). 구 데이터는 null */
+  /** k=3 투표 결과 (리뷰 큐 정렬 신호). 구 데이터는 null */
   classification_consensus?: ClassifyConsensus | null
+  /** 교차검증 모델의 제안 — 리뷰 큐 정렬 ①번 신호. 자동확정에는 쓰지 않는다 */
+  cross_check_code?: string | null
+  cross_check_model?: string | null
 }
 
 export type ItemPatch = Partial<

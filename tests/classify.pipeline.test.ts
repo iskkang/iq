@@ -12,7 +12,7 @@ import {
   MAX_LINES_PER_HEADING,
   VOTES,
   cacheKey,
-  decideStatus,
+  assessSuggestion,
   extractJson,
   normalizeForCache,
   parseStageA,
@@ -21,7 +21,8 @@ import {
   tallyVotes,
 } from '../supabase/functions/classify/pipeline'
 import type { CatalogLine, ClassifyInput, Selection, StageAResult } from '../supabase/functions/classify/pipeline'
-import { resolveStatus } from '../src/lib/classify/status'
+import { isReviewed, resolveStatus } from '../src/lib/classify/status'
+import { coverageOfTopN, rankReviewQueue } from '../src/lib/classify/reviewQueue'
 
 const item = (id: string): ClassifyInput => ({
   id,
@@ -91,7 +92,7 @@ describe('보기 밖 코드 = 무효표 (자유 생성 금지)', () => {
   })
 })
 
-describe('auto_confirmed = 만장일치 AND 원장 실존', () => {
+describe('자동확정 없음 — 확인 전에는 전부 suggested (v3)', () => {
   const unanimous = tallyVotes(
     item('a'),
     stageA,
@@ -103,45 +104,113 @@ describe('auto_confirmed = 만장일치 AND 원장 실존', () => {
     { selection: sel('a', '9617001000'), valid: true },
   ])
 
-  it('만장일치 + 원장 실존 → auto_confirmed', () => {
-    expect(decideStatus(unanimous, true).status).toBe('auto_confirmed')
-  })
-
-  it('만장일치인데 원장에 없으면 needs_review', () => {
-    const d = decideStatus(unanimous, false)
-    expect(d.status).toBe('needs_review')
-    expect(d.reason).toContain('원장')
-  })
-
-  it('원장에 있어도 표가 갈리면 needs_review', () => {
-    expect(decideStatus(split, true).status).toBe('needs_review')
-  })
-
-  it('confidence 는 판정에 전혀 관여하지 않는다', () => {
-    const lowConf = tallyVotes(
-      item('a'),
-      stageA,
-      Array.from({ length: VOTES }, () => ({ selection: sel('a', '9617001000', 0.01), valid: true })),
-    )
-    const highConf = tallyVotes(
-      item('a'),
-      stageA,
-      Array.from({ length: VOTES }, () => ({ selection: sel('a', '9617001000', 0.99), valid: true })),
-    )
-    expect(decideStatus(lowConf, true).status).toBe('auto_confirmed')
-    expect(decideStatus(highConf, false).status).toBe('needs_review')
-  })
-})
-
-describe('resolveStatus — consensus 없는 응답은 안전한 쪽으로', () => {
-  it('consensus 가 없으면 confidence 가 높아도 needs_review', () => {
+  it('만장일치 + 원장 실존이어도 auto_confirmed 가 되지 않는다', () => {
     expect(
-      resolveStatus({ item_id: 'a', candidates: [{ hts_code: '9617001000', confidence: 0.99, rationale: '' }] }),
-    ).toBe('needs_review')
+      resolveStatus({
+        item_id: 'a',
+        candidates: [{ hts_code: '9617001000', confidence: 0.99, rationale: '' }],
+        consensus: {
+          code: '9617001000',
+          unanimous: true,
+          votes: ['9617001000', '9617001000', '9617001000'],
+          in_ledger: true,
+          out_of_options: 0,
+          reason: assessSuggestion(unanimous, true).reason,
+        },
+      }),
+    ).toBe('suggested')
   })
 
   it('후보가 없으면 pending', () => {
     expect(resolveStatus({ item_id: 'a', candidates: [] })).toBe('pending')
+  })
+
+  it('user_confirmed 만 isReviewed 다 — 나머지는 리포트에 unreviewed', () => {
+    expect(isReviewed('user_confirmed')).toBe(true)
+    expect(isReviewed('suggested')).toBe(false)
+    expect(isReviewed('pending')).toBe(false)
+  })
+
+  it('만장일치는 검토 사유에 "사람 확인 대기"로 남는다', () => {
+    expect(assessSuggestion(unanimous, true).reason).toContain('사람 확인 대기')
+  })
+
+  it('투표가 갈리면 우선 검토 사유가 남는다', () => {
+    expect(assessSuggestion(split, true).reason).toContain('우선 검토')
+  })
+
+  it('원장에 없으면 duty 계산 불가가 사유에 남는다', () => {
+    const r = assessSuggestion(unanimous, false).reason
+    expect(r).toContain('원장')
+    expect(r).toContain('우선 검토')
+  })
+})
+
+describe('리뷰 큐 정렬 — 모델 불일치 → 호 경합 → duty 금액', () => {
+  const base = { consensus: null, reviewed: false }
+
+  it('모델 불일치가 duty 금액보다 우선한다', () => {
+    const ranked = rankReviewQueue([
+      { ...base, sku: 'BIG', hts_code: '6912004810', cross_check_code: '6912004810', duty_per_unit: 10, units: 1000 },
+      { ...base, sku: 'DISAGREE', hts_code: '9617001000', cross_check_code: '7323930060', duty_per_unit: 0.1, units: 10 },
+    ])
+    expect(ranked[0].sku).toBe('DISAGREE')
+    expect(ranked[0].models_disagree).toBe(true)
+    expect(ranked[0].reasons[0]).toContain('모델 불일치')
+  })
+
+  it('6자리가 같으면 통계 suffix 가 달라도 불일치가 아니다', () => {
+    const ranked = rankReviewQueue([
+      { ...base, sku: 'A', hts_code: '6912004810', cross_check_code: '6912002000', duty_per_unit: 1, units: 1 },
+    ])
+    expect(ranked[0].models_disagree).toBe(false)
+  })
+
+  it('호 후보 2개 이상이 duty 금액보다 우선한다', () => {
+    const ranked = rankReviewQueue([
+      { ...base, sku: 'BIG', hts_code: '1', headings: ['6912'], duty_per_unit: 10, units: 1000 },
+      { ...base, sku: 'CONTESTED', hts_code: '2', headings: ['9617', '7323'], duty_per_unit: 0.1, units: 10 },
+    ])
+    expect(ranked[0].sku).toBe('CONTESTED')
+    expect(ranked[0].heading_contested).toBe(true)
+  })
+
+  it('같은 조건이면 duty 총액이 큰 순', () => {
+    const ranked = rankReviewQueue([
+      { ...base, sku: 'SMALL', hts_code: '1', duty_per_unit: 1, units: 10 },
+      { ...base, sku: 'LARGE', hts_code: '2', duty_per_unit: 1, units: 5000 },
+      { ...base, sku: 'MID', hts_code: '3', duty_per_unit: 1, units: 100 },
+    ])
+    expect(ranked.map((r) => r.sku)).toEqual(['LARGE', 'MID', 'SMALL'])
+  })
+
+  it('이미 확인한 건은 큐에서 빠진다', () => {
+    const ranked = rankReviewQueue([
+      { ...base, sku: 'DONE', hts_code: '1', duty_per_unit: 100, units: 100, reviewed: true },
+      { ...base, sku: 'TODO', hts_code: '2', duty_per_unit: 1, units: 1 },
+    ])
+    expect(ranked.map((r) => r.sku)).toEqual(['TODO'])
+  })
+
+  it('교차검증 미실행(null)이면 불일치로 치지 않는다', () => {
+    const ranked = rankReviewQueue([
+      { ...base, sku: 'A', hts_code: '6912004810', cross_check_code: null, duty_per_unit: 1, units: 1 },
+    ])
+    expect(ranked[0].models_disagree).toBe(false)
+  })
+
+  it('상위 N건 커버리지를 계산한다 (금액 노출 집중도)', () => {
+    const items = [
+      { ...base, sku: 'A', hts_code: '1', duty_per_unit: 30, units: 1000 },
+      { ...base, sku: 'B', hts_code: '2', duty_per_unit: 30, units: 1000 },
+      { ...base, sku: 'C', hts_code: '3', duty_per_unit: 30, units: 1000 },
+      ...Array.from({ length: 97 }, (_, i) => ({
+        ...base, sku: `X${i}`, hts_code: '9', duty_per_unit: 0.1, units: 100,
+      })),
+    ]
+    const cov = coverageOfTopN(rankReviewQueue(items), 3)
+    expect(cov.pct).toBeGreaterThan(0.85)
+    expect(cov.total_usd).toBeCloseTo(90000 + 970, 6)
   })
 })
 
@@ -205,6 +274,35 @@ describe('프롬프트 조립', () => {
 describe('응답 파싱', () => {
   it('markdown 펜스를 벗겨낸다', () => {
     expect(extractJson('```json\n{"a":1}\n```')).toEqual({ a: 1 })
+  })
+
+  it('모델이 스스로 정정해 오브젝트를 두 번 내면 마지막(정정본)을 쓴다', () => {
+    // bench 실측에서 실제로 터졌던 형태
+    const raw = [
+      '{"results":[{"item_id":"a","hts_code":"9999999999"}]}',
+      '— I need to correct the backpack entry. Let me resubmit properly:',
+      '{"results":[{"item_id":"a","hts_code":"4202923120"}]}',
+    ].join('\n')
+    const out = extractJson(raw) as { results: Array<{ hts_code: string }> }
+    expect(out.results[0].hts_code).toBe('4202923120')
+  })
+
+  it('산문이 앞뒤로 붙어도 파싱된다', () => {
+    expect(extractJson('Here you go:\n{"results":[]}\nLet me know!')).toEqual({ results: [] })
+  })
+
+  it('문자열 안의 중괄호·이스케이프에 속지 않는다', () => {
+    const raw = String.raw`{"results":[{"rationale":"uses {braces} and \" quotes"}]}`
+    const out = extractJson(raw) as { results: Array<{ rationale: string }> }
+    expect(out.results[0].rationale).toContain('{braces}')
+  })
+
+  it('results 없는 오브젝트만 있으면 파싱 가능한 것을 쓴다', () => {
+    expect(extractJson('{"a":1}')).toEqual({ a: 1 })
+  })
+
+  it('JSON 이 전혀 없으면 던진다', () => {
+    expect(() => extractJson('sorry, I cannot help with that')).toThrow()
   })
 
   it('stage A: 4자리가 아닌 호는 버린다', () => {

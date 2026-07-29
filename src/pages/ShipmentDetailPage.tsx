@@ -9,8 +9,7 @@ import { ReportView } from './ReportView'
 
 const STATUS_CHIP: Record<Item['classification_status'], { label: string; cls: string }> = {
   pending: { label: 'Unclassified', cls: 'bg-slate-100 text-slate-600' },
-  needs_review: { label: 'Needs review', cls: 'bg-amber-100 text-amber-800' },
-  auto_confirmed: { label: 'Auto-confirmed', cls: 'bg-emerald-100 text-emerald-700' },
+  suggested: { label: 'Suggested (unreviewed)', cls: 'bg-amber-100 text-amber-800' },
   user_confirmed: { label: 'Confirmed', cls: 'bg-indigo-100 text-indigo-700' },
 }
 
@@ -98,7 +97,7 @@ export function ShipmentDetailPage() {
   if (!shipment) return <p className="text-sm text-slate-500">Loading…</p>
 
   const pendingCount = items.filter((i) => i.classification_status === 'pending').length
-  const reviewCount = items.filter((i) => i.classification_status === 'needs_review').length
+  const reviewCount = items.filter((i) => i.classification_status === 'suggested').length
 
   return (
     <div className="space-y-4">
@@ -154,7 +153,7 @@ export function ShipmentDetailPage() {
             </button>
             {reviewCount > 0 && (
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
-                Needs review: {reviewCount} (투표 불일치 또는 원장 미등재)
+Unreviewed: {reviewCount} — 사람 확인 전까지 리포트에 unreviewed 로 표기됩니다
               </span>
             )}
             <span className="ml-auto text-[11px] text-slate-400">
@@ -239,12 +238,12 @@ export function ShipmentDetailPage() {
                           {it.classification_consensus && (
                             <p
                               className={`mb-3 rounded-md px-3 py-2 text-xs ${
-                                it.classification_consensus.status === 'auto_confirmed'
-                                  ? 'bg-emerald-50 text-emerald-800'
+                                it.classification_consensus.unanimous && it.classification_consensus.in_ledger
+                                  ? 'bg-slate-50 text-slate-700'
                                   : 'bg-amber-50 text-amber-800'
                               }`}
                             >
-                              <b>판정:</b> {it.classification_consensus.reason}
+                              <b>검토 참고:</b> {it.classification_consensus.reason}
                               {' · '}
                               <span className="font-mono">
                                 votes [{it.classification_consensus.votes.map((v) => (v ? formatHts(v) : '—')).join(', ')}]

@@ -71,7 +71,7 @@ export function mockClassifyBatch(items: ClassifyItemInput[]): ClassifyBatchResu
       // 미매칭: 결정론적으로 뽑되 저신뢰 → needs_review 경로 시연
       const i = h % DEFAULT_POOL.length
       codes = [DEFAULT_POOL[i], DEFAULT_POOL[(i + 3) % DEFAULT_POOL.length], DEFAULT_POOL[(i + 7) % DEFAULT_POOL.length]]
-      base = 0.45 + (h % 20) / 100 // 0.45~0.64 — 저신뢰
+      base = 0.45 + (h % 20) / 100 // 0.45~0.64 — 저신뢰 (참고 표기용)
     }
 
     const candidates: HtsCandidate[] = codes.slice(0, 3).map((code, rank) => ({
@@ -83,10 +83,9 @@ export function mockClassifyBatch(items: ClassifyItemInput[]): ClassifyBatchResu
           : `[MOCK] Alternative candidate ${rank + 1}`,
     }))
 
-    // v2 판정 형태를 맞춘다. mock 은 결정론이라 k=3 은 항상 만장일치이므로
-    // 키워드 매칭 성공(고신뢰) 여부를 만장일치 대용으로 쓴다.
-    // in_ledger 는 mock 이 원장을 못 보므로 true 로 두고, 실제 판정은
-    // 원장을 볼 수 있는 edge 백엔드에서만 의미를 갖는다.
+    // 투표 형태를 맞춘다. mock 은 결정론이라 k=3 은 항상 만장일치이므로
+    // 키워드 매칭 성공 여부를 만장일치 대용으로 쓴다.
+    // 이 값은 리뷰 큐 정렬 신호일 뿐 자동확정에는 쓰이지 않는다 (v3).
     const top = candidates[0].hts_code
     const unanimous = !!matched
     const consensus: ClassifyConsensus = {
@@ -95,8 +94,7 @@ export function mockClassifyBatch(items: ClassifyItemInput[]): ClassifyBatchResu
       votes: [unanimous ? top : null, unanimous ? top : null, unanimous ? top : null],
       in_ledger: true,
       out_of_options: 0,
-      status: unanimous ? 'auto_confirmed' : 'needs_review',
-      reason: unanimous ? '[MOCK] 키워드 매칭 — 만장일치 취급' : '[MOCK] 키워드 미매칭 — 리뷰 필요',
+      reason: unanimous ? '[MOCK] 키워드 매칭 — 만장일치 취급' : '[MOCK] 키워드 미매칭 — 우선 검토',
     }
     return { item_id: item.id, candidates, attributes: null, headings: [top.slice(0, 4)], consensus }
   })

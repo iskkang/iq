@@ -40,7 +40,7 @@ import {
   STAGE_B_SYSTEM,
   TEMPERATURE,
   VOTES,
-  decideStatus,
+  assessSuggestion,
   extractJson,
   parseStageA,
   parseStageB,
@@ -234,7 +234,7 @@ async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<Classif
       })
       const o = tallyVotes(item, stageA.get(item.id), perVote)
       const inLedger = o.consensus ? LEDGER.some((r) => r.layer === 'base_mfn' && r.hts_code === o.consensus) : false
-      const { status, reason } = decideStatus(o, inLedger)
+      const { reason } = assessSuggestion(o, inLedger)
       const byCode = new Map<string, HtsCandidate>()
       for (const s of o.selections) {
         if (!byCode.has(s.hts_code))
@@ -251,7 +251,6 @@ async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<Classif
           votes: o.votes,
           in_ledger: inLedger,
           out_of_options: o.out_of_options,
-          status,
           reason,
         },
       }
@@ -466,7 +465,7 @@ async function main() {
         top: cands[0] ?? null,
         consensus,
         // 자동확정이 아니면 리포트에 잠정 표시 (§5)
-        provisional: status !== 'auto_confirmed',
+        provisional: status !== 'user_confirmed',
         status,
         // 계산에 쓸 코드: 만장일치면 그 코드, 아니면 1표라도 나온 값(잠정)
         chosen: consensus?.code ?? cands[0]?.hts_code ?? null,

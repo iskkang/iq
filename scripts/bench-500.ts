@@ -1,16 +1,19 @@
 /**
- * §6-2 벤치마크: CSV 500행 업로드 → 리포트까지 3분 이내.
+ * §6-2 벤치마크: CSV 500행 업로드 → 리포트까지 3분 이내 + **SKU당 API 비용**.
  *
- * 측정 대상 (결정론적 파이프라인 전체):
- *   CSV 500행 생성 → 파싱/검증 → 분류(mock, 배치10×동시4 동일 경로)
- *   → §4 계산(원장 62행 조회 포함) → 리포트 CSV 생성
+ * v2 파이프라인은 배치당 LLM 호출이 1 → 최대 6회(2단계 × k=3)로 늘었다.
+ * 시간뿐 아니라 비용도 재야 한다 — 2단계×k=3 이면 $29/50SKU 플랜의 마진이 깨질 수 있다.
  *
- * LLM 실호출 시간은 별도 모델링: 500 SKU = 50콜(배치10) ÷ 동시4 = 13웨이브.
- * 웨이브당 8초(보수적)로 잡아도 ~104초. 파이프라인 실측치 + 104초 < 180초면 통과.
+ * 두 축을 측정한다:
+ *   A. 결정론 파이프라인 실측 (mock 분류) — 파싱·계산·리포트 생성 시간
+ *   B. 실 LLM 비용 — 소표본(--sample=N)을 실제로 호출해 SKU당 토큰·USD 를 재고,
+ *      500 SKU 로 외삽한다. 캐시 히트율 가정별로 함께 낸다.
  *
- * 실행: npm run bench
+ * 실행:
+ *   npm run bench                 # A 만 (LLM 호출 없음)
+ *   npm run bench -- --sample=10  # A + B (10 SKU 실호출 후 외삽)
  */
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import Papa from 'papaparse'
@@ -19,15 +22,52 @@ import { round2, round4 } from '../src/lib/calc/money'
 import { formatHts } from '../src/lib/calc/rates'
 import type { CalcItem, FeeSettings, RateLayer, RateRow } from '../src/lib/calc/types'
 import { classifyItems } from '../src/lib/classify/client'
-import { CONFIDENCE_THRESHOLD } from '../src/lib/classify/types'
+import { resolveStatus } from '../src/lib/classify/status'
 import { parseItemsCsv } from '../src/lib/csv/parseItems'
+import { coverageOfTopN, rankReviewQueue } from '../src/lib/classify/reviewQueue'
+import {
+  CROSS_CHECK_MODEL,
+  PRIMARY_MODEL,
+  addUsage,
+  costOf,
+  emptyUsage,
+  planMargins,
+  PRICING,
+  type TokenUsage,
+} from '../src/lib/classify/models'
+import {
+  MAX_LINES_PER_HEADING,
+  STAGE_A_SYSTEM,
+  STAGE_B_SYSTEM,
+  TEMPERATURE,
+  VOTES,
+  extractJson,
+  parseStageA,
+  parseStageB,
+  stageAUser,
+  stageBUser,
+} from '../supabase/functions/classify/pipeline'
+import type { CatalogLine } from '../supabase/functions/classify/pipeline'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const argv = process.argv.slice(2)
+const arg = (n: string) => argv.find((a) => a.startsWith(`--${n}=`))?.split('=')[1]
+const SAMPLE = Number(arg('sample') ?? 0)
 
-// ── 시드 원장 로드 (seedRates.ts는 vite ?raw 의존이라 node에서 직접 파싱) ──
-const seedCsv = readFileSync(join(__dirname, '../supabase/seed/hts_seed_50.csv'), 'utf-8')
-const parsedSeed = Papa.parse<Record<string, string>>(seedCsv, { header: true, skipEmptyLines: true })
-const LEDGER: RateRow[] = parsedSeed.data.map((r) => ({
+function dotenv(name: string): string | undefined {
+  if (process.env[name]) return process.env[name]
+  const f = join(root, '.env')
+  if (!existsSync(f)) return undefined
+  const m = readFileSync(f, 'utf-8').match(new RegExp(`^\\s*${name}\\s*=\\s*(.*)\\s*$`, 'm'))
+  return m ? m[1].replace(/^["']|["']$/g, '') : undefined
+}
+
+// ── 시드 원장 ────────────────────────────────────────────────
+const seedCsv = readFileSync(join(root, 'supabase/seed/hts_seed_50.csv'), 'utf-8')
+const LEDGER: RateRow[] = Papa.parse<Record<string, string>>(seedCsv, {
+  header: true,
+  skipEmptyLines: true,
+}).data.map((r) => ({
   hts_code: r.hts_code.trim(),
   origin_country: r.origin_country?.trim() ? r.origin_country.trim().toUpperCase() : null,
   layer: r.layer.trim() as RateLayer,
@@ -43,7 +83,7 @@ const FEES: FeeSettings = {
   effective_from: '2024-10-01',
 }
 
-// ── 1) 500행 CSV 생성 ──────────────────────────────────────────
+// ── 500행 CSV 생성 ──────────────────────────────────────────
 const NAMES = [
   'Ceramic Mug', 'Cotton T-Shirt', 'Plastic Bottle', 'Backpack', 'Frying Pan',
   'USB Cable', 'Wooden Toy', 'Bath Towel', 'Headphones', 'Throw Pillow',
@@ -65,10 +105,78 @@ for (let i = 0; i < 500; i++) {
 }
 const csv500 = rows.join('\n')
 
+// ── B: 실 LLM 비용 측정 ─────────────────────────────────────
+interface CallUsage { model: string; usage: TokenUsage }
+
+async function callWithUsage(model: string, system: string, user: string): Promise<{ parsed: unknown; call: CallUsage }> {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': dotenv('ANTHROPIC_API_KEY')!,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({ model, max_tokens: 4096, temperature: TEMPERATURE, system, messages: [{ role: 'user', content: user }] }),
+  })
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  const data = await res.json()
+  const text: string = (data.content ?? []).filter((b: { type: string }) => b.type === 'text').map((b: { text: string }) => b.text).join('')
+  return {
+    parsed: extractJson(text),
+    call: {
+      model,
+      usage: {
+        input_tokens: data.usage?.input_tokens ?? 0,
+        output_tokens: data.usage?.output_tokens ?? 0,
+        cache_read_input_tokens: data.usage?.cache_read_input_tokens ?? 0,
+        cache_creation_input_tokens: data.usage?.cache_creation_input_tokens ?? 0,
+      },
+    },
+  }
+}
+
+/** 한 배치(≤10 SKU)를 v2 파이프라인 그대로 돌리고 호출별 usage 를 모은다 */
+async function measureBatch(batch: Array<{ id: string; product_name: string; description_or_material: string; origin_country: string }>) {
+  const catalogPath = join(root, 'data/hts_lines.json')
+  if (!existsSync(catalogPath)) throw new Error('data/hts_lines.json 없음 — npm run hts:fetch')
+  const lines: Array<{ code: string; heading: string; description: string }> = JSON.parse(readFileSync(catalogPath, 'utf-8'))
+  const byHeading = new Map<string, CatalogLine[]>()
+  for (const l of lines) {
+    if (!byHeading.has(l.heading)) byHeading.set(l.heading, [])
+    byHeading.get(l.heading)!.push(l)
+  }
+
+  const calls: CallUsage[] = []
+  const a = await callWithUsage(PRIMARY_MODEL, STAGE_A_SYSTEM, stageAUser(batch))
+  calls.push(a.call)
+  const stageA = parseStageA(a.parsed)
+
+  const linesByHeading = new Map<string, CatalogLine[]>()
+  for (const h of new Set([...stageA.values()].flatMap((x) => x.headings))) {
+    linesByHeading.set(h, (byHeading.get(h) ?? []).slice(0, MAX_LINES_PER_HEADING))
+  }
+  const userB = stageBUser(batch, stageA, linesByHeading)
+
+  const votes = await Promise.all(
+    Array.from({ length: VOTES }, async () => {
+      const r = await callWithUsage(PRIMARY_MODEL, STAGE_B_SYSTEM, userB)
+      calls.push(r.call)
+      return parseStageB(r.parsed)
+    }),
+  )
+
+  // 교차검증 (haiku) — 리뷰 큐 정렬용 1표
+  const cross = await callWithUsage(CROSS_CHECK_MODEL, STAGE_B_SYSTEM, userB)
+  calls.push(cross.call)
+  const crossSel = parseStageB(cross.parsed)
+
+  return { calls, stageA, votes, crossSel }
+}
+
 async function main() {
   const t0 = performance.now()
 
-  // 2) 파싱/검증
+  // ── A: 결정론 파이프라인 ───────────────────────────────────
   const { items: parsed, errors } = parseItemsCsv(csv500)
   const t1 = performance.now()
   if (errors.length > 0 || parsed.length !== 500) {
@@ -76,7 +184,6 @@ async function main() {
     process.exit(1)
   }
 
-  // 3) 분류 (mock — 실서비스와 동일한 배치/동시성 경로)
   const withIds = parsed.map((p, i) => ({ ...p, id: `it-${i}` }))
   const batches = await classifyItems(
     { kind: 'mock' },
@@ -89,16 +196,15 @@ async function main() {
   )
   const t2 = performance.now()
 
-  // 4) 상태 전이 + §4 계산
   const htsById = new Map<string, { hts: string; provisional: boolean }>()
-  let needsReview = 0
+  let unreviewed = 0
   for (const b of batches)
     for (const r of b.results) {
       const top = r.candidates[0]
       if (!top) continue
-      const provisional = top.confidence < CONFIDENCE_THRESHOLD
-      if (provisional) needsReview++
-      htsById.set(r.item_id, { hts: top.hts_code, provisional })
+      const status = resolveStatus(r)
+      if (status !== 'user_confirmed') unreviewed++
+      htsById.set(r.item_id, { hts: r.consensus?.code ?? top.hts_code, provisional: status !== 'user_confirmed' })
     }
 
   const calcItems: CalcItem[] = withIds.map((p) => ({
@@ -108,49 +214,122 @@ async function main() {
     units_per_shipment: p.units_per_shipment,
     current_price_usd: p.current_price_usd,
     hts_code: htsById.get(p.id)?.hts ?? null,
-    provisional: htsById.get(p.id)?.provisional ?? false,
+    provisional: htsById.get(p.id)?.provisional ?? true,
   }))
 
   const result = computeShipment(
-    {
-      freight_usd: 8000, insurance_usd: 300, mode: 'ocean', allocation_basis: 'value',
-      target_margin: 0.3, channel_fee_pct: 0.15, rate_as_of: '2026-07-01',
-    },
+    { freight_usd: 8000, insurance_usd: 300, mode: 'ocean', allocation_basis: 'value', target_margin: 0.3, channel_fee_pct: 0.15, rate_as_of: '2026-07-29' },
     calcItems, LEDGER, FEES,
   )
   const t3 = performance.now()
 
-  // 5) 리포트 CSV 생성 (exportReport와 동일 로직, DOM 없이)
-  const reportRows = result.items.map((r) => ({
-    SKU: r.sku,
-    HTS: formatHts(r.hts_code),
-    Duty: dutyBreakdownLabel(r),
-    DutyUsd: round4(r.duty_usd),
-    Landed: round4(r.landed_cost),
+  const reportCsv = Papa.unparse(result.items.map((r) => ({
+    SKU: r.sku, HTS: formatHts(r.hts_code), Duty: dutyBreakdownLabel(r),
+    DutyUsd: round4(r.duty_usd), Landed: round4(r.landed_cost),
     Margin: r.true_margin !== null ? round4(r.true_margin) : '',
     Rec: r.recommended_price !== null ? round2(r.recommended_price) : '',
-  }))
-  const reportCsv = Papa.unparse(reportRows)
+  })))
   const t4 = performance.now()
-
   const pipelineMs = t4 - t0
-  const llmModeledSec = Math.ceil(500 / 10 / 4) * 8 // 13웨이브 × 8초 (보수적)
-  const totalModeledSec = pipelineMs / 1000 + llmModeledSec
 
-  console.log('── §6-2 벤치마크 (500 SKU) ──────────────────────')
+  console.log('── A. 결정론 파이프라인 (500 SKU) ──────────────')
   console.log(`파싱/검증:        ${(t1 - t0).toFixed(1)} ms`)
-  console.log(`분류(mock 경로):  ${(t2 - t1).toFixed(1)} ms  (needs_review ${needsReview}건)`)
+  console.log(`분류(mock 경로):  ${(t2 - t1).toFixed(1)} ms  (unreviewed ${unreviewed}건)`)
   console.log(`§4 계산(원장 ${LEDGER.length}행): ${(t3 - t2).toFixed(1)} ms`)
-  console.log(`리포트 CSV 생성:  ${(t4 - t3).toFixed(1)} ms  (${reportCsv.length.toLocaleString()} bytes)`)
-  console.log(`파이프라인 합계:  ${pipelineMs.toFixed(1)} ms`)
-  console.log(`LLM 실호출 모델링: 50콜 ÷ 동시4 = 13웨이브 × 8s = ${llmModeledSec}s`)
-  console.log(`추정 총 소요:     ${totalModeledSec.toFixed(1)}s  (기준 180s) → ${totalModeledSec < 180 ? 'PASS' : 'FAIL'}`)
+  console.log(`리포트 CSV:       ${(t4 - t3).toFixed(1)} ms  (${reportCsv.length.toLocaleString()} bytes)`)
+  console.log(`합계:             ${pipelineMs.toFixed(1)} ms`)
 
-  // 무결성 스팟체크: 배부 보존
   const freightSum = result.items.reduce((a, it) => a + it.freight_per_unit * it.units, 0)
-  const ok = Math.abs(freightSum - 8300) < 0.001
-  console.log(`운임 배부 보존:   Σ = ${freightSum.toFixed(4)} (기대 8300) → ${ok ? 'OK' : 'MISMATCH'}`)
-  if (!ok || totalModeledSec >= 180) process.exit(1)
+  const allocOk = Math.abs(freightSum - 8300) < 0.001
+  console.log(`운임 배부 보존:   Σ = ${freightSum.toFixed(4)} (기대 8300) → ${allocOk ? 'OK' : 'MISMATCH'}`)
+
+  // ── 리뷰 큐 커버리지 ──────────────────────────────────────
+  const ranked = rankReviewQueue(result.items.map((r) => ({
+    sku: r.sku,
+    hts_code: r.hts_code,
+    duty_per_unit: r.duty_usd,
+    units: r.units,
+  })))
+  console.log('')
+  console.log('── 리뷰 큐 커버리지 (상위 N건이 duty 노출의 몇 %) ──')
+  for (const n of [10, 20, 50]) {
+    const c = coverageOfTopN(ranked, n)
+    console.log(`  상위 ${String(n).padStart(3)}건: $${c.covered_usd.toFixed(0).padStart(8)} / $${c.total_usd.toFixed(0)} = ${(c.pct * 100).toFixed(1)}%`)
+  }
+
+  if (!SAMPLE) {
+    console.log('')
+    console.log('B(실 LLM 비용)는 --sample=N 으로 실행 (예: npm run bench -- --sample=10)')
+    if (!allocOk) process.exit(1)
+    return
+  }
+
+  // ── B: 실 LLM 비용 ────────────────────────────────────────
+  console.log('')
+  console.log(`── B. 실 LLM 비용 측정 (${SAMPLE} SKU 실호출) ──────`)
+  const sample = withIds.slice(0, SAMPLE).map((p) => ({
+    id: p.id,
+    product_name: p.product_name,
+    description_or_material: p.description_or_material,
+    origin_country: p.origin_country,
+  }))
+
+  const tB = performance.now()
+  const measured = await measureBatch(sample)
+  const wallMs = performance.now() - tB
+
+  const byModel = new Map<string, TokenUsage>()
+  for (const c of measured.calls) byModel.set(c.model, addUsage(byModel.get(c.model) ?? emptyUsage(), c.usage))
+
+  let total = 0
+  console.log('')
+  console.log('| 모델 | 호출 | in tok | out tok | USD |')
+  console.log('|---|---|---|---|---|')
+  for (const [model, u] of byModel) {
+    const n = measured.calls.filter((c) => c.model === model).length
+    const usd = costOf(model, u)
+    total += usd
+    console.log(`| ${model} | ${n} | ${u.input_tokens.toLocaleString()} | ${u.output_tokens.toLocaleString()} | $${usd.toFixed(4)} |`)
+  }
+
+  const perSku = total / SAMPLE
+  console.log('')
+  console.log(`배치 wall-time:   ${(wallMs / 1000).toFixed(1)}s (${SAMPLE} SKU, 호출 ${measured.calls.length}회)`)
+  console.log(`SKU당 비용:       $${perSku.toFixed(5)}  (주 ${PRIMARY_MODEL} + 교차 ${CROSS_CHECK_MODEL})`)
+  console.log(`500 SKU 외삽:     $${(perSku * 500).toFixed(2)}`)
+
+  // §6-2 시간 외삽: 배치10 × 동시8, 배치당 wall = stage A + stage B(3표 동시)
+  const CONCURRENCY = 8
+  const waves = Math.ceil(500 / 10 / CONCURRENCY)
+  const estSec = (waves * wallMs) / 1000
+  console.log('')
+  console.log(`§6-2 시간 외삽:   50배치 ÷ 동시${CONCURRENCY} = ${waves}웨이브 × ${(wallMs / 1000).toFixed(1)}s = ${estSec.toFixed(0)}s (기준 180s) → ${estSec < 180 ? 'PASS' : 'FAIL'}`)
+
+  // ── 플랜 마진 ─────────────────────────────────────────────
+  console.log('')
+  console.log('── 플랜 마진 (캐시 0% 가정, 최악) ──────────────')
+  console.log('| 플랜 | 가격 | SKU 한도 | API 비용 | 총마진 |')
+  console.log('|---|---|---|---|---|')
+  for (const m of planMargins(perSku)) {
+    const flag = m.gross_margin_pct < 0.7 ? ' ⚠️' : ''
+    console.log(`| ${m.plan} | $${m.price_usd} | ${m.sku_quota} | $${m.api_cost_total.toFixed(2)} | ${(m.gross_margin_pct * 100).toFixed(1)}%${flag} |`)
+  }
+
+  console.log('')
+  console.log('── 캐시 히트율별 SKU당 비용 ────────────────────')
+  console.log('| 히트율 | SKU당 | Starter 마진 | Growth 마진 |')
+  console.log('|---|---|---|---|')
+  for (const hit of [0, 0.3, 0.5, 0.7, 0.9]) {
+    const c = perSku * (1 - hit) // 캐시 히트 = LLM 재호출 없음 → 비용 0
+    const [starter, growth] = planMargins(c)
+    console.log(`| ${(hit * 100).toFixed(0)}% | $${c.toFixed(5)} | ${(starter.gross_margin_pct * 100).toFixed(1)}% | ${(growth.gross_margin_pct * 100).toFixed(1)}% |`)
+  }
+  console.log('')
+  console.log(`캐시 최소 프리픽스: ${PRIMARY_MODEL} ${PRICING[PRIMARY_MODEL].cache_min_tokens} tok · ${CROSS_CHECK_MODEL} ${PRICING[CROSS_CHECK_MODEL].cache_min_tokens} tok`)
+  console.log('  (분류 캐시는 프롬프트 캐시가 아니라 결과 캐시라 최소 길이 제약을 받지 않는다 —')
+  console.log('   동일 상품 재업로드 시 LLM 호출 자체가 없다.)')
+
+  if (!allocOk || estSec >= 180) process.exit(1)
 }
 
 main()

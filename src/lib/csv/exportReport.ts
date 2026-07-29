@@ -4,6 +4,7 @@ import { dutyBreakdownLabel } from '../calc/engine'
 import { formatHts } from '../calc/rates'
 import { round2, round4 } from '../calc/money'
 import { DISCLAIMER_EN } from '../disclaimer'
+import { UNREVIEWED_LABEL } from '../classify/status'
 
 /**
  * 리포트 CSV (스펙 §2 컬럼 + §4 레이어 내역·기준일 + §1-2 고지).
@@ -12,7 +13,8 @@ export function buildReportCsv(result: ShipmentResult, shipmentName: string): st
   const rows = result.items.map((r) => ({
     SKU: r.sku,
     'Unit cost (USD)': round2(r.unit_cost),
-    HTS: formatHts(r.hts_code) + (r.provisional ? ' (provisional)' : ''),
+    HTS: formatHts(r.hts_code),
+    'HTS status': r.provisional ? UNREVIEWED_LABEL : 'user confirmed',
     'Duty % breakdown': dutyBreakdownLabel(r),
     'Duty $ (per unit)': round4(r.duty_usd),
     'Fees (MPF+HMF, per unit)': round4(r.fees_per_unit),
@@ -30,6 +32,7 @@ export function buildReportCsv(result: ShipmentResult, shipmentName: string): st
     `"Shipment: ${shipmentName}"`,
     `"Rates as of: ${result.rate_as_of} (rate ledger snapshot)"`,
     `"MPF (shipment): $${round2(result.totals.mpf_shipment)} / HMF (shipment): $${round2(result.totals.hmf_shipment)} / Allocation basis: ${result.totals.allocation_basis_used}"`,
+    `"Rows marked '${UNREVIEWED_LABEL}' are model suggestions that no person has confirmed. The importer of record is responsible for the final classification."`,
     `"${DISCLAIMER_EN}"`,
   ].join('\r\n')
 

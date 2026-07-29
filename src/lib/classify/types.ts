@@ -32,10 +32,10 @@ export interface ClassifyAttributes {
 }
 
 /**
- * k=3 투표 결과와 자동확정 판정 근거.
+ * k=3 투표 결과.
  *
- * auto_confirmed = 만장일치 AND 코드가 rate 원장에 실존.
- * 그 외는 전부 needs_review — 사람이 봐야 한다 (§1-3).
+ * v3 부터 이 값은 **자동확정 판정에 쓰이지 않는다** — 확인 전에는 전부 suggested 다.
+ * 대신 리뷰 큐 정렬 신호로 쓴다 (투표 불일치·원장 미등재면 우선순위가 올라간다).
  */
 export interface ClassifyConsensus {
   /** 만장일치 코드. 갈리면 null */
@@ -46,7 +46,6 @@ export interface ClassifyConsensus {
   in_ledger: boolean
   /** 보기 밖 코드를 낸 횟수 (재시도 후에도 실패한 건) */
   out_of_options: number
-  status: 'auto_confirmed' | 'needs_review'
   reason: string
 }
 

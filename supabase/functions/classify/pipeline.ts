@@ -146,12 +146,65 @@ export function stageBUser(
 
 // ── 응답 파싱 ─────────────────────────────────────────────────
 
+/**
+ * 모델 출력에서 JSON 오브젝트를 뽑는다.
+ *
+ * 첫 `{` ~ 마지막 `}` 를 그대로 자르면 안 된다. 모델이 스스로를 정정하며
+ * 오브젝트를 두 번 낼 때가 있다:
+ *
+ *   {"results":[…]}
+ *   — I need to correct the backpack entry. Let me resubmit properly:
+ *   {"results":[…]}
+ *
+ * 이 경우 첫 `{`~마지막 `}` 슬라이스는 중간 산문까지 삼켜 파싱이 깨진다
+ * (bench 실측에서 실제로 터졌다). 균형 잡힌 오브젝트 구간을 모두 찾아
+ * **마지막(=정정본)부터** 시도하고, `results` 를 가진 첫 오브젝트를 쓴다.
+ */
 export function extractJson(text: string): unknown {
   const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
-  const start = cleaned.indexOf('{')
-  const end = cleaned.lastIndexOf('}')
-  if (start < 0 || end < 0) throw new Error('no JSON object in model output')
-  return JSON.parse(cleaned.slice(start, end + 1))
+
+  // 문자열 리터럴 안의 중괄호는 세지 않는다
+  const spans: Array<[number, number]> = []
+  let depth = 0
+  let start = -1
+  let inStr = false
+  let esc = false
+  for (let i = 0; i < cleaned.length; i++) {
+    const c = cleaned[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (c === '\\') esc = true
+      else if (c === '"') inStr = false
+      continue
+    }
+    if (c === '"') inStr = true
+    else if (c === '{') {
+      if (depth === 0) start = i
+      depth++
+    } else if (c === '}') {
+      depth--
+      if (depth === 0 && start >= 0) {
+        spans.push([start, i + 1])
+        start = -1
+      }
+    }
+  }
+  if (spans.length === 0) throw new Error('no JSON object in model output')
+
+  let lastErr: unknown = null
+  const parsed: unknown[] = []
+  for (let i = spans.length - 1; i >= 0; i--) {
+    try {
+      const obj = JSON.parse(cleaned.slice(spans[i][0], spans[i][1]))
+      // 정정본 우선: results 를 가진 가장 마지막 오브젝트
+      if (obj && typeof obj === 'object' && 'results' in (obj as object)) return obj
+      parsed.push(obj)
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  if (parsed.length > 0) return parsed[0]
+  throw new Error(`no parseable JSON object in model output: ${lastErr}`)
 }
 
 export function parseStageA(parsed: unknown): Map<string, StageAResult> {
@@ -241,31 +294,24 @@ export function tallyVotes(
 }
 
 /**
- * 최종 상태 판정 (요구사항 3).
+ * 투표 결과 요약 — 리뷰 큐 정렬 신호.
  *
- * auto_confirmed = k=3 만장일치 AND 코드가 rate 원장에 실존.
- * 그 외 전부 needs_review. confidence 는 판정에서 빠지고 참고 표기로만 남는다
- * — v2 측정에서 오답에도 85~91% 를 줘서 신호 역할을 못 했기 때문.
+ * v3 부터 자동확정은 없다. 사람이 확인하기 전에는 전부 `suggested` 이므로
+ * 이 함수는 상태를 정하지 않고 "왜 눈여겨봐야 하는가"만 문장으로 남긴다.
+ * (골든 v3: temperature 0 에서 만장일치율 94~100% — 만장일치는 사실상 상수라
+ *  자동확정 근거가 될 수 없었다.)
  */
-export function decideStatus(
-  outcome: VoteOutcome,
-  inLedger: boolean,
-): { status: 'auto_confirmed' | 'needs_review'; reason: string } {
+export function assessSuggestion(outcome: VoteOutcome, inLedger: boolean): { reason: string } {
   if (!outcome.unanimous) {
     const distinct = [...new Set(outcome.votes.filter(Boolean))]
     return {
-      status: 'needs_review',
-      reason:
-        outcome.votes.some((v) => v === null)
-          ? `${VOTES}회 투표 중 ${outcome.votes.filter((v) => v === null).length}회가 보기 밖 코드를 냄`
-          : `${VOTES}회 투표가 갈림 (${distinct.join(', ')})`,
+      reason: outcome.votes.some((v) => v === null)
+        ? `${VOTES}회 투표 중 ${outcome.votes.filter((v) => v === null).length}회가 보기 밖 코드를 냄 — 우선 검토`
+        : `${VOTES}회 투표가 갈림 (${distinct.join(', ')}) — 우선 검토`,
     }
   }
   if (!inLedger) {
-    return {
-      status: 'needs_review',
-      reason: `만장일치(${outcome.consensus})지만 rate 원장에 해당 코드의 base MFN 이 없어 duty 를 계산할 수 없음`,
-    }
+    return { reason: `만장일치(${outcome.consensus})지만 원장에 base MFN 이 없어 duty 를 계산할 수 없음 — 우선 검토` }
   }
-  return { status: 'auto_confirmed', reason: `${VOTES}회 만장일치 + 원장 실존` }
+  return { reason: `${VOTES}회 만장일치 + 원장 실존 — 사람 확인 대기` }
 }

@@ -35,3 +35,5 @@ supabase/.temp/
 
 # USITC HTS 카탈로그 (8.6MB, npm run hts:fetch 로 재생성) — meta 만 커밋
 data/hts_lines.json
+data/hts_ch99.json
+data/ch99_provisions.json

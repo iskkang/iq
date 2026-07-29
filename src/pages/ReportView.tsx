@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { DisclaimerBlock } from '../components/Disclaimer'
 import { computeShipment, dutyBreakdownLabel } from '../lib/calc/engine'
 import { fmtPct, fmtUsd, round2 } from '../lib/calc/money'
+import { isReviewed, UNREVIEWED_LABEL } from '../lib/classify/status'
 import { formatHts } from '../lib/calc/rates'
 import type { CalcItem, FeeSettings, RateRow } from '../lib/calc/types'
 import { buildReportCsv, downloadCsv } from '../lib/csv/exportReport'
@@ -34,7 +35,7 @@ export function ReportView({ shipment, items }: { shipment: Shipment; items: Ite
       weight_kg_per_unit: it.weight_kg_per_unit,
       current_price_usd: it.current_price_usd,
       hts_code: it.hts_final,
-      provisional: it.classification_status === 'needs_review', // §5: 잠정 표시
+      provisional: !isReviewed(it.classification_status), // 사람 미확인 → unreviewed 표기
     }))
     return computeShipment(
       {
@@ -72,6 +73,14 @@ export function ReportView({ shipment, items }: { shipment: Shipment; items: Ite
         </button>
       </div>
 
+      {result.items.some((r) => r.provisional) && (
+        <p className="rounded-md bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+          ⚠ {result.items.filter((r) => r.provisional).length} of {result.items.length} SKUs are marked{' '}
+          <b>{UNREVIEWED_LABEL}</b> — model suggestions no person has confirmed. The importer of record is
+          responsible for the final classification.
+        </p>
+      )}
+
       {result.warnings.map((w) => (
         <p key={w} className="rounded-md bg-amber-50 px-3 py-1.5 text-xs text-amber-800">⚠ {w}</p>
       ))}
@@ -100,8 +109,11 @@ export function ReportView({ shipment, items }: { shipment: Shipment; items: Ite
                 <td className="px-3 py-2 text-left font-mono">
                   {formatHts(r.hts_code)}
                   {r.provisional && (
-                    <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800">
-                      provisional
+                    <span
+                      className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800"
+                      title="Model suggestion — no person has confirmed this classification"
+                    >
+                      {UNREVIEWED_LABEL}
                     </span>
                   )}
                 </td>
