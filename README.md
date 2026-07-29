@@ -1,5 +1,7 @@
 # LandedIQ — Phase 1 (코어)
 
+[![check](https://github.com/iskkang/iq/actions/workflows/check.yml/badge.svg)](https://github.com/iskkang/iq/actions/workflows/check.yml)
+
 미국 중소 수입셀러용 landed cost 추정 웹앱. 상품 CSV 업로드 → HTS 후보 추정(LLM) → 관세·수수료·운임 배부 → SKU별 landed cost·실제 마진·권장 판매가 리포트.
 
 스펙: `landed-cost-mvp-spec-v1.md` (Phase 1 = 가입 → CSV 업로드 → HTS 추정 → 계산 → 화면 리포트 + CSV 다운로드)
@@ -30,7 +32,7 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 |---|---|
 | `npm run test` | 단위 테스트 123건 (§4 계산식 + 골든 10건 + CSV 파싱 + 301 원산지 스코핑 + 분류 파이프라인) |
 | `npm run golden` | 골든 테스트 실행 (`golden-test-products.csv` → `test-results.md`) |
-| `npm run check` | **커밋 전 이것만 돌리면 된다** — tsc(src) + tsc(scripts·tests) + deno check(Edge) + vitest + oxlint |
+| `npm run check` | **커밋 전 이것만 돌리면 된다** (push 하면 CI 가 같은 걸 자동 실행) — tsc(src) + tsc(scripts·tests) + deno check(Edge) + vitest + oxlint |
 | `npm run bench` | §6-2 벤치마크 (`--sample=N` 비용, `--concurrency=N` 웨이브 실측) |
 | `npm run hts:ch99` | HTSUS Ch.99 → 301·IEEPA 관리자 확정 워크시트 |
 | `npm run hts:fetch` | USITC 공식 HTS 카탈로그 수집 → `data/hts_lines.json` |
