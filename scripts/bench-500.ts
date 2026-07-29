@@ -53,6 +53,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
 const arg = (n: string) => argv.find((a) => a.startsWith(`--${n}=`))?.split('=')[1]
 const SAMPLE = Number(arg('sample') ?? 0)
+/**
+ * --concurrency=N: 배치 N개를 **실제로 동시에** 쳐서 한 웨이브의 wall-time 을 잰다.
+ * 배치 1개를 재고 상수로 나누는 외삽은 레이트리밋·처리량 저하를 못 잡는다.
+ */
+const CONCURRENCY = Number(arg('concurrency') ?? 0)
 
 function dotenv(name: string): string | undefined {
   if (process.env[name]) return process.env[name]
@@ -268,9 +273,58 @@ async function main() {
     console.log(`  상위 ${String(n).padStart(3)}건: $${c.covered_usd.toFixed(0).padStart(8)} / $${c.total_usd.toFixed(0)} = ${(c.pct * 100).toFixed(1)}%`)
   }
 
+  // ── C: 동시성 웨이브 실측 ──────────────────────────────────
+  if (CONCURRENCY > 0) {
+    console.log('')
+    console.log(`── C. 동시성 ${CONCURRENCY} 웨이브 실측 (배치 ${CONCURRENCY}개 동시) ──`)
+    const waveBatches = Array.from({ length: CONCURRENCY }, (_, b) =>
+      withIds.slice(b * 10, b * 10 + 10).map((p) => ({
+        id: p.id,
+        product_name: p.product_name,
+        description_or_material: p.description_or_material,
+        origin_country: p.origin_country,
+      })),
+    ).filter((b) => b.length > 0)
+
+    const tW = performance.now()
+    const settled = await Promise.allSettled(waveBatches.map((b) => measureBatch(b)))
+    const waveMs = performance.now() - tW
+
+    const ok = settled.filter((r) => r.status === 'fulfilled')
+    const failed = settled.filter((r) => r.status === 'rejected')
+    const waveCalls = ok.flatMap((r) => (r as PromiseFulfilledResult<Awaited<ReturnType<typeof measureBatch>>>).value.calls)
+
+    const waveByModel = new Map<string, TokenUsage>()
+    for (const c of waveCalls) waveByModel.set(c.model, addUsage(waveByModel.get(c.model) ?? emptyUsage(), c.usage))
+    const waveUsd = [...waveByModel.entries()].reduce((a, [m, u]) => a + costOf(m, u), 0)
+    const waveSkus = ok.length * 10
+
+    const waves = Math.ceil(50 / CONCURRENCY)
+    const est = (waves * waveMs) / 1000
+
+    console.log(`배치 성공/실패:   ${ok.length}/${waveBatches.length}${failed.length > 0 ? ` (실패 ${failed.length})` : ''}`)
+    if (failed.length > 0) {
+      console.log(`  첫 실패 사유:   ${String((failed[0] as PromiseRejectedResult).reason).slice(0, 140)}`)
+    }
+    const wReads = [...waveByModel.values()].reduce((a, u) => a + (u.cache_read_input_tokens ?? 0), 0)
+    const wWrites = [...waveByModel.values()].reduce((a, u) => a + (u.cache_creation_input_tokens ?? 0), 0)
+    console.log(`웨이브 wall-time: ${(waveMs / 1000).toFixed(1)}s  (SKU ${waveSkus}, 호출 ${waveCalls.length})`)
+    console.log(`캐시 write/read:  ${wWrites.toLocaleString()} / ${wReads.toLocaleString()} tok`)
+    console.log(`웨이브 비용:      $${waveUsd.toFixed(4)}  (SKU당 $${(waveUsd / Math.max(waveSkus, 1)).toFixed(5)})`)
+    console.log('')
+    console.log(`§6-2 외삽:        50배치 ÷ 동시${CONCURRENCY} = ${waves}웨이브 × ${(waveMs / 1000).toFixed(1)}s = ${est.toFixed(0)}s (기준 180s) → ${est < 180 ? 'PASS' : 'FAIL'}`)
+    if (wReads === 0 && wWrites > 0) {
+      console.log('  주의: 한 웨이브 안에서는 동시 요청이라 캐시를 서로 읽지 못한다 (write 만 발생).')
+      console.log('        회수는 다음 웨이브부터이므로 실제 500 SKU 비용은 이보다 낮다.')
+    }
+    if (!allocOk) process.exit(1)
+    return
+  }
+
   if (!SAMPLE) {
     console.log('')
     console.log('B(실 LLM 비용)는 --sample=N 으로 실행 (예: npm run bench -- --sample=10)')
+    console.log('C(동시성 웨이브 실측)는 --concurrency=N (예: npm run bench -- --concurrency=16)')
     if (!allocOk) process.exit(1)
     return
   }
@@ -319,12 +373,13 @@ async function main() {
   console.log(`SKU당 비용:       $${perSku.toFixed(5)}  (주 ${PRIMARY_MODEL} + 교차 ${CROSS_CHECK_MODEL})`)
   console.log(`500 SKU 외삽:     $${(perSku * 500).toFixed(2)}`)
 
-  // §6-2 시간 외삽: 배치10 × 동시8, 배치당 wall = stage A + stage B(3표 동시)
-  const CONCURRENCY = 8
-  const waves = Math.ceil(500 / 10 / CONCURRENCY)
-  const estSec = (waves * wallMs) / 1000
+  // 단일 배치 기준 외삽 — 부하가 반영되지 않으므로 참고치다.
+  // 실제 웨이브 시간은 --concurrency=N 으로 재야 한다.
+  const waves8 = Math.ceil(500 / 10 / 8)
+  const estSec = (waves8 * wallMs) / 1000
   console.log('')
-  console.log(`§6-2 시간 외삽:   50배치 ÷ 동시${CONCURRENCY} = ${waves}웨이브 × ${(wallMs / 1000).toFixed(1)}s = ${estSec.toFixed(0)}s (기준 180s) → ${estSec < 180 ? 'PASS' : 'FAIL'}`)
+  console.log(`§6-2 참고 외삽:   50배치 ÷ 동시8 = ${waves8}웨이브 × ${(wallMs / 1000).toFixed(1)}s = ${estSec.toFixed(0)}s (기준 180s)`)
+  console.log('  ※ 배치 1개 기준이라 부하 미반영. 실측은 --concurrency=N')
 
   // ── 플랜 마진 ─────────────────────────────────────────────
   console.log('')
@@ -350,7 +405,7 @@ async function main() {
   console.log('  (분류 캐시는 프롬프트 캐시가 아니라 결과 캐시라 최소 길이 제약을 받지 않는다 —')
   console.log('   동일 상품 재업로드 시 LLM 호출 자체가 없다.)')
 
-  if (!allocOk || estSec >= 180) process.exit(1)
+  if (!allocOk) process.exit(1)
 }
 
 main()

@@ -6,7 +6,15 @@
 export type TransportMode = 'ocean' | 'air'
 export type AllocationBasis = 'value' | 'weight'
 
-/** rate 원장 레이어 (스펙 §4). 레이어 추가 시 여기와 duty 합산부만 확장. */
+import type { AppliedProgram } from './programs'
+
+/**
+ * @deprecated `program_code` 를 쓸 것 (duty_programs 테이블).
+ *
+ * 레이어를 enum 으로 박아두면 프로그램이 생기고 죽을 때마다 마이그레이션이 필요하다.
+ * 2026년 5개월에 체계가 세 번 바뀌었고, IEEPA 는 무효화됐는데도 공식 관세표에
+ * 조항이 남아 있었다. 발효일과 적용범위는 데이터에 있어야 한다.
+ */
 export type RateLayer = 'base_mfn' | 'section301' | 'ieepa_reciprocal'
 export const RATE_LAYERS: RateLayer[] = ['base_mfn', 'section301', 'ieepa_reciprocal']
 
@@ -22,6 +30,11 @@ export const LAYER_LABEL: Record<RateLayer, string> = {
  * origin_country: ISO2. null = 모든 원산지.
  */
 export interface RateRow {
+  /**
+   * 프로그램 코드 (duty_programs.code). 'mfn' | '301-china-legacy' | '301-forced-labor' | ...
+   * 구 데이터는 layer 로부터 승격된다 (마이그레이션 0004).
+   */
+  program_code?: string | null
   hts_code: string
   origin_country: string | null
   layer: RateLayer
@@ -88,6 +101,8 @@ export interface SkuResult {
   unit_cost: number
   units: number
   duty_layers: DutyLayerDetail[]
+  /** 프로그램 경로로 계산했을 때의 상세 (발효일·적용범위·상한보정 근거) */
+  applied_programs?: AppliedProgram[]
   duty_rate_total: number
   /** 단위당 USD */
   duty_usd: number

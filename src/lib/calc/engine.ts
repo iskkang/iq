@@ -22,6 +22,8 @@ import type {
 import { LAYER_LABEL } from './types'
 import { clamp } from './money'
 import { expectedLayers, lookupDutyLayers, normalizeHts } from './rates'
+import { resolvePrograms } from './programs'
+import type { DutyProgram, ProgramExclusion } from './programs'
 
 export function trueMargin(
   currentPrice: number,
@@ -42,11 +44,24 @@ export function recommendedPrice(
   return landedCost / denom
 }
 
+/**
+ * 프로그램 기반 계산에 필요한 참조 데이터.
+ *
+ * 넘기면 `resolvePrograms` 경로를 쓴다 (발효일·적용범위·상한보정 지원).
+ * 생략하면 구 레이어 경로로 폴백한다 — 데모 모드·기존 fixture 호환용이며
+ * IEEPA 처럼 만료된 프로그램을 자동으로 걸러내지 못한다.
+ */
+export interface ProgramContext {
+  programs: DutyProgram[]
+  exclusions: ProgramExclusion[]
+}
+
 export function computeShipment(
   shipment: CalcShipment,
   items: CalcItem[],
   ledger: RateRow[],
   fees: FeeSettings,
+  ctx?: ProgramContext,
 ): ShipmentResult {
   const shipmentWarnings: string[] = []
 
@@ -85,6 +100,64 @@ export function computeShipment(
 
     // duty (HTS 미확정 → 0 + 경고)
     const hts = it.hts_code ? normalizeHts(it.hts_code) : null
+
+    // ── 프로그램 경로 (발효일·적용범위·상한보정) ──────────────
+    if (ctx) {
+      const { applied, total } = resolvePrograms(
+        ledger,
+        ctx.programs,
+        ctx.exclusions,
+        hts,
+        it.origin_country,
+        shipment.rate_as_of,
+      )
+      if (!hts) warnings.push('HTS not confirmed — duty calculated as $0')
+      else if (applied.length === 0) warnings.push('No duty program matched — duty calculated as $0')
+      else {
+        // 면제로 0 이 된 프로그램은 리포트에 남긴다 — 조용한 과소계상 방지 (v2 결함과 같은 부류)
+        for (const a of applied) {
+          if (a.excluded) {
+            warnings.push(`${a.authority} (${a.program_code}) is excluded for this HTS — treated as 0%`)
+          }
+        }
+      }
+      const dutyUsd0 = it.unit_cost_usd * total
+      const freightPerUnit0 = units > 0 ? (freightPool * allocShare) / units : 0
+      const mpfPerUnit0 = units > 0 ? (mpfShipment * valueShare) / units : 0
+      const hmfPerUnit0 = units > 0 ? (hmfShipment * valueShare) / units : 0
+      const landed0 = it.unit_cost_usd + dutyUsd0 + freightPerUnit0 + mpfPerUnit0 + hmfPerUnit0
+      const price0 = it.current_price_usd ?? null
+      const margin0 = price0 && price0 > 0 ? trueMargin(price0, landed0, shipment.channel_fee_pct) : null
+      const rec0 = recommendedPrice(landed0, shipment.target_margin, shipment.channel_fee_pct)
+      if (rec0 === null) warnings.push('target margin + channel fee ≥ 100% — recommended price unavailable')
+      return {
+        sku: it.sku,
+        hts_code: hts,
+        provisional: it.provisional ?? false,
+        unit_cost: it.unit_cost_usd,
+        units,
+        // 구 필드 호환: 프로그램 결과를 레이어 모양으로 투영
+        duty_layers: applied.map((a) => ({
+          layer: 'base_mfn' as const,
+          rate: a.applied_rate,
+          matched_hts: a.matched_hts,
+        })),
+        applied_programs: applied,
+        duty_rate_total: total,
+        duty_usd: dutyUsd0,
+        freight_per_unit: freightPerUnit0,
+        mpf_per_unit: mpfPerUnit0,
+        hmf_per_unit: hmfPerUnit0,
+        fees_per_unit: mpfPerUnit0 + hmfPerUnit0,
+        landed_cost: landed0,
+        current_price: price0,
+        true_margin: margin0,
+        recommended_price: rec0,
+        warnings,
+      }
+    }
+
+    // ── 구 레이어 경로 (deprecated) ──────────────────────────
     let dutyLayers = lookupDutyLayers(ledger, hts ?? '', it.origin_country, shipment.rate_as_of)
     let dutyRateTotal = 0
     if (hts) {

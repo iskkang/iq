@@ -28,9 +28,9 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 
 | 명령 | 내용 |
 |---|---|
-| `npm run test` | 단위 테스트 112건 (§4 계산식 + 골든 10건 + CSV 파싱 + 301 원산지 스코핑 + 분류 파이프라인) |
+| `npm run test` | 단위 테스트 132건 (§4 계산식 + 골든 10건 + CSV 파싱 + 301 원산지 스코핑 + 분류 파이프라인) |
 | `npm run golden` | 골든 테스트 실행 (`golden-test-products.csv` → `test-results.md`) |
-| `npm run bench` | §6-2 벤치마크 (`-- --sample=N` 으로 실 LLM 비용 측정) |
+| `npm run bench` | §6-2 벤치마크 (`--sample=N` 비용, `--concurrency=N` 웨이브 실측) |
 | `npm run hts:ch99` | HTSUS Ch.99 → 301·IEEPA 관리자 확정 워크시트 |
 | `npm run hts:fetch` | USITC 공식 HTS 카탈로그 수집 → `data/hts_lines.json` |
 | `npm run hts:seed` | 카탈로그 → Supabase `hts_lines` + `rate_ledger` base MFN |
@@ -66,7 +66,7 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 | §2-1·2 세율 | 부분 통과 — base MFN 17,633행 USITC 공식 적재. **301·IEEPA 는 관리자 확정 대기** |
 | §2-3 계산 정확도 | ✅ 통과 — 배부 보존·MPF 캡 3경로 |
 | §2-4 원산지 스코핑 | ✅ 통과 |
-| §6-2 500 SKU 3분 | ❌ **실패 — 268s** (k=1+캐싱 후. 이전 321s). 아래 참조 |
+| §6-2 500 SKU 3분 | ❌ **실패 — 실측 200s** (동시16, 4웨이브×50.0s). 아래 참조 |
 | §3 E2E | ⛔ 미집행 — UI 수동 수행 필요 |
 
 **광고 집행은 아직 불가** — 남은 블로커는 §6-2(시간) · §2-1·2(301·IEEPA) · §3(E2E) 셋.
@@ -143,10 +143,45 @@ npm run hts:seed     # → Supabase hts_lines + rate_ledger base_mfn (종가세 
 위 측정은 배치 1개라 **쓰기만 하고 읽지 못했으므로 비용은 상한**이다 — 실제 500 SKU 실행에서는
 호 중복도만큼 회수된다.
 
-**§6-2 는 여전히 실패(268s)**. 다음 레버는 `MAX_LINES_PER_HEADING` 축소인데, 정답 라인이
-잘릴 위험이 있어 60/30/20 으로 골든을 돌려 점수 곡선을 보고 자를 것.
+**동시성 실측** (`npm run bench -- --concurrency=16`) — 배치 16개를 실제로 동시에 친다:
 
-### Section 301 · IEEPA 확정
+| | 배치 1개 | 동시 16 |
+|---|---|---|
+| 웨이브 wall-time | 38.3s | **50.0s** (+31%) |
+| 웨이브 수 | 7 | 4 |
+| 외삽 | 268s | **200s** ❌ |
+
+배치 1개를 재고 상수로 나누면 4×38.3=153s 로 **PASS 라고 잘못 나온다**. 부하에서 웨이브가
+길어지므로 반드시 실측해야 한다. 16/16 성공, 레이트리밋 없음.
+
+180s 에 11% 부족. 웨이브 수는 계단함수(17~25 → 3웨이브, 25+ → 2웨이브)라 동시성을 더 올리면
+넘길 여지가 있고, 그 다음이 `MAX_LINES_PER_HEADING` 축소(정확도 트레이드오프 있음)다.
+
+### 관세 프로그램 (발효일 기반)
+
+레이어 enum(`base_mfn`/`section301`/`ieepa_reciprocal`)을 버리고 `duty_programs` 테이블로
+일반화했다. 2026년 5개월에 체계가 세 번 바뀌었고 — IEEPA(대법원 무효, 02-24 종료) →
+Section 122(07-24 만료) → 강제노동 301 — 마이그레이션 없이 프로그램을 추가·종료할 수 있어야 한다.
+
+**결정적 근거**: USITC 공식 HTS Chapter 99 에는 **무효화된 IEEPA 조항이 그대로 남아 있고
+만료된 Section 122 도 들어 있다.** 관세표 텍스트는 "지금 시행 중"의 근거가 못 된다.
+
+프로그램 속성 세 가지:
+
+| 속성 | 값 | 왜 필요한가 |
+|---|---|---|
+| `effective_from/to` | 날짜 | IEEPA 는 `effective_to=2026-02-24` 라 그 이후 계산에서 **데이터만으로** 빠진다 |
+| `scope_type` | `all` / `country` / `hts_list` / `country_and_hts` | 중국 301 은 8자리 라인 목록, 강제노동 301 은 국가+면제, 122 는 전면. 이걸 안 두면 "4자리 호 전체에 25%" 같은 구조적 오류를 다시 낸다 |
+| `rate_type` | `additive` / `top_up_to_total` | EU·대만 "합계 10%", 일본·한국·스위스 "합계 12.5%" 는 상한 보정형이다. `Σ layers` 로는 이 원산지에서 틀린 숫자가 나온다 |
+
+`top_up_to_total` 은 가산분을 먼저 합산한 뒤 **목표에 못 미치는 차액만** 더한다
+(일본 + MFN 4.9% → 301 은 7.6%, 합계 12.5%). 면제(`program_exclusions`)는 해당 프로그램만
+0 으로 만들고 리포트에 사유를 남긴다.
+
+[programs.ts](src/lib/calc/programs.ts) · [migration 0004](supabase/migrations/0004_duty_programs.sql) ·
+테스트 [calc.programs.test.ts](tests/calc.programs.test.ts) 20건
+
+### Section 301 확정
 
 ```bash
 npm run hts:ch99    # HTSUS Chapter 99 → supabase/seed/ch99_worksheet.md
