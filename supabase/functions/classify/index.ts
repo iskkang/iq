@@ -345,8 +345,18 @@ Deno.serve(async (req: Request) => {
       no_cache?: boolean
       model?: string
       task_id?: string
+      selftest?: boolean
     }
     const db = admin()
+
+    // ── 자가진단 ───────────────────────────────────────────────
+    // Vault 에 저장된 URL·키로 실제 호출이 되는지 확인하는 용도.
+    // 이름이 어긋나면 크론은 계속 도는데 401·404 가 조용히 쌓이고,
+    // cron.job_run_details 를 열어봐야만 보인다. 여기서 먼저 드러나게 한다.
+    // Anthropic 을 부르지 않으므로 비용이 들지 않는다.
+    if (body.selftest) {
+      return json({ ok: true, fn: 'classify', prompt_version: PROMPT_VERSION, has_api_key: true })
+    }
 
     // ── 워커 모드 (pg_cron → net.http_post) ────────────────────
     if (body.task_id) return await runTask(db, apiKey, body.task_id)

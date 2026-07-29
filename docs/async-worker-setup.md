@@ -13,42 +13,53 @@
 
 ## 1회 설치 — Vault 시크릿
 
-**이 단계는 계정 소유자가 직접 해야 한다.** Supabase CLI 에는 임의 SQL 실행
-서브커맨드가 없고, 서비스 롤 키를 다른 도구에 흘리지 않는 편이 낫다.
+**이 단계는 계정 소유자가 직접 해야 한다.** 서비스 롤 키는 git 에도, 마이그레이션
+파일에도 남기지 않는다.
 
 [SQL Editor](https://supabase.com/dashboard/project/hwcfjxwdmmlydnrfyjqk/sql/new) 에서
-아래를 한 번 실행한다. `<SERVICE_ROLE_KEY>` 는 Settings → API Keys 의 `service_role` 값이다.
+아래 한 줄만 실행한다. **따옴표 안을 Settings → API Keys 의 `service_role` 값으로
+반드시 바꿀 것** — 문구를 그대로 붙여넣으면 함수가 거부한다.
 
 ```sql
-select vault.create_secret(
-  'https://hwcfjxwdmmlydnrfyjqk.supabase.co/functions/v1/classify',
-  'classify_function_url',
-  'pg_cron 워커가 호출하는 분류 함수 엔드포인트'
-);
-
-select vault.create_secret(
-  '<SERVICE_ROLE_KEY>',
-  'service_role_key',
-  'pg_cron 워커가 Edge Function 을 부를 때 쓰는 인증 토큰'
-);
+select public.set_worker_service_key('여기에_실제_service_role_키');
 ```
 
-시크릿이 없으면 디스패처는 아무 일도 하지 않고 경고만 남긴다 — 큐가 조용히
-쌓이기만 하므로, 설치 후 아래 확인을 반드시 거칠 것.
+`project_url` 은 마이그레이션(0009)이 알아서 넣는다. 프로젝트 주소는 비밀이 아니라
+랜딩 `index.html` 에도 실려 있다.
 
-## 설치 확인
+> **왜 헬퍼를 쓰나.** 예전 안내는 `vault.create_secret('<SERVICE_ROLE_KEY>', ...)` 였고
+> 실제로 그 18자 문자열이 그대로 저장됐다. 크론은 계속 돌면서 401
+> (`UNAUTHORIZED_INVALID_JWT_FORMAT`)만 조용히 받았다. `set_worker_service_key()` 는
+> 치환 안 된 값·형식 불일치·잘린 키를 저장 전에 거부한다.
+
+## 설치 확인 — 반드시 거칠 것
+
+이름이나 값이 어긋나도 크론은 정상적으로 돈다. 실패는 `net._http_response` 에만
+남으므로 **자가진단으로 확인해야 한다.**
 
 ```sql
--- 1) 크론이 등록됐는가
-select jobname, schedule, active from cron.job where jobname like 'classify-%';
---   classify-dispatch | 10 seconds | t
---   classify-cleanup  | 17 4 * * * | t
+select public.worker_selftest();
+--  {"ok": true, "request_id": 1, "endpoint": "https://….supabase.co/functions/v1/classify",
+--   "key_len": 219, "key_looks_like_jwt": true}
+--  ok:false 면 found_names 에 실제 등록된 이름이 나온다
 
--- 2) 시크릿이 보이는가 (값은 안 보여도 된다)
-select name from vault.decrypted_secrets where name in ('classify_function_url','service_role_key');
+-- 몇 초 뒤, 위에서 받은 request_id 로
+select public.worker_selftest_result(1);
+--  {"status_code": 200, "verdict": "정상 — 이름·URL·키 모두 맞다", ...}
+```
 
--- 3) 디스패처를 손으로 한 번 돌려본다 (큐가 비어 있으면 0 이 정상)
-select public.dispatch_classification_tasks();
+| status_code | 뜻 | 조치 |
+|---|---|---|
+| 200 | 정상 | — |
+| 401 | 키가 틀렸거나 만료 | `set_worker_service_key()` 다시 |
+| 404 | 함수 이름/경로가 틀림 | `classify_function_url` 시크릿이 남아 있는지 확인 후 삭제 |
+| `ok:false` | 시크릿을 못 찾음 | `found_names` 와 대조 |
+
+크론·큐 상태 한눈에:
+
+```sql
+select public.worker_status();
+--  cron_jobs(2개 active) · queue(queued/running/failed) · recent_cron_failures
 ```
 
 ## 운용 — 자주 볼 쿼리
@@ -68,10 +79,12 @@ select id, job_id, seq, attempts, error
  order by finished_at desc limit 20;
 
 -- 크론 실행 이력 (실패 원인 추적)
-select start_time, status, return_message
-  from cron.job_run_details
- where jobname = 'classify-dispatch'
- order by start_time desc limit 20;
+-- job_run_details 에는 jobname 이 없다 — cron.job 과 jobid 로 조인해야 한다
+select d.start_time, d.status, d.return_message
+  from cron.job_run_details d
+  join cron.job j on j.jobid = d.jobid
+ where j.jobname = 'classify-dispatch'
+ order by d.start_time desc limit 20;
 ```
 
 ## 손잡이
