@@ -56,6 +56,16 @@ describe('ensureSampleShipment', () => {
     expect(origins.size).toBeGreaterThan(1)
   })
 
+  /**
+   * 중국은 레거시 301(List 1~4, 최대 25%)이 8자리 목록에 따라 추가로 붙는다.
+   * 그 목록을 원장에 적재하기 전까지 중국산 샘플은 실제 관세를 절반 이하로 표시한다 —
+   * 빠진 게 아니라 오답이다. 목록 적재가 끝나면 이 테스트를 지우고 CN 을 되돌려도 된다.
+   */
+  it('레거시 301 목록 적재 전까지 샘플에 중국산을 쓰지 않는다', () => {
+    const cn = SAMPLE_ITEMS.filter((i) => i.origin_country === 'CN').map((i) => i.sku)
+    expect(cn, `중국 레거시 301 미적재 상태에서 CN 샘플은 관세를 과소 표시한다: ${cn.join(', ')}`).toEqual([])
+  })
+
   it('모든 샘플 SKU 에 현재가가 있어야 마진·권장가 컬럼이 채워진다', () => {
     for (const i of SAMPLE_ITEMS) {
       expect(i.current_price_usd, `${i.sku} 에 current_price 가 없다`).toBeGreaterThan(0)

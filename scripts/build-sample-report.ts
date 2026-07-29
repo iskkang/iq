@@ -10,7 +10,7 @@
  *
  * 실행: npm run sample:build
  */
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync, readFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { computeShipment } from '../src/lib/calc/engine'
@@ -25,7 +25,15 @@ import type { CalcItem, CalcShipment, FeeSettings, RateRow } from '../src/lib/ca
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const AS_OF = '2026-07-29'
 
-/** 확인된 프로그램만 (MFN + 2026-07-24 시행 강제노동 301). 중국 레거시 301 은 8자리 목록 확정 전이라 제외. */
+/**
+ * 확인된 프로그램만 (MFN + 2026-07-24 시행 강제노동 301).
+ *
+ * **샘플에 중국산을 쓰지 않는다.** 중국은 레거시 301(List 1~4, 최대 25%)이 추가로 붙는데
+ * 그 8자리 목록이 아직 원장에 없다. 중국산으로 샘플을 만들면 지배적인 레이어가 통째로
+ * 빠져 실제 관세를 절반 이하로 표시하게 된다 — "확인된 것만 보여준다"가 아니라 오답이다.
+ * 베트남·인도는 강제노동 301 만으로 오늘 기준 완결이라 샘플로 안전하고,
+ * China+1 로 소싱을 옮긴 셀러가 타깃이라 오히려 더 적합하다.
+ */
 const PROGRAMS: DutyProgram[] = [
   { code: 'mfn', name: 'Base MFN', authority: 'MFN', rate_type: 'additive', scope_type: 'hts_list', effective_from: '1900-01-01', effective_to: null },
   { code: '301-fl', name: 'Section 301 (forced labor)', authority: 'Section 301', rate_type: 'additive', scope_type: 'country', effective_from: '2026-07-24', effective_to: null },
@@ -38,7 +46,6 @@ const LEDGER: RateRow[] = [
   { program_code: 'mfn', hts_code: '7323930060', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.02, effective_from: '2025-01-01', effective_to: null },
   { program_code: 'mfn', hts_code: '6109100012', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.165, effective_from: '2025-01-01', effective_to: null },
   { program_code: 'mfn', hts_code: '9617001000', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.072, effective_from: '2025-01-01', effective_to: null },
-  { program_code: '301-fl', hts_code: '*', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.125, effective_from: '2026-07-24', effective_to: null },
   { program_code: '301-fl', hts_code: '*', origin_country: 'VN', layer: 'section301', ad_valorem_rate: 0.125, effective_from: '2026-07-24', effective_to: null },
   { program_code: '301-fl', hts_code: '*', origin_country: 'IN', layer: 'section301', ad_valorem_rate: 0.10, effective_from: '2026-07-24', effective_to: null },
 ]
@@ -50,14 +57,55 @@ const SHIP: CalcShipment = {
 }
 
 const ITEMS: CalcItem[] = [
-  { sku: 'MUG-01',      hts_code: '6912004400', unit_cost_usd: 2.5,  origin_country: 'CN', units_per_shipment: 1000, current_price_usd: 12.99 },
-  { sku: 'BACKPACK-01', hts_code: '4202923120', unit_cost_usd: 8.5,  origin_country: 'CN', units_per_shipment: 400,  current_price_usd: 39.99 },
-  { sku: 'PAN-01',      hts_code: '7323930060', unit_cost_usd: 6.4,  origin_country: 'CN', units_per_shipment: 300,  current_price_usd: 24.99 },
+  { sku: 'MUG-01',      hts_code: '6912004400', unit_cost_usd: 2.5,  origin_country: 'VN', units_per_shipment: 1000, current_price_usd: 12.99 },
+  { sku: 'BACKPACK-01', hts_code: '4202923120', unit_cost_usd: 8.5,  origin_country: 'VN', units_per_shipment: 400,  current_price_usd: 39.99 },
+  { sku: 'PAN-01',      hts_code: '7323930060', unit_cost_usd: 6.4,  origin_country: 'VN', units_per_shipment: 300,  current_price_usd: 24.99 },
   { sku: 'TSHIRT-01',   hts_code: '6109100012', unit_cost_usd: 3.2,  origin_country: 'IN', units_per_shipment: 800,  current_price_usd: 19.99 },
   { sku: 'TUMBLER-01',  hts_code: '9617001000', unit_cost_usd: 3.1,  origin_country: 'VN', units_per_shipment: 600,  current_price_usd: 24.99 },
 ]
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
+
+/** 랜딩 "What you get" 표에 넣을 행 수 */
+const LANDING_ROWS = 3
+
+/**
+ * 랜딩(index.html)의 샘플 표를 같은 엔진 결과로 덮어쓴다.
+ *
+ * 손으로 쓴 표는 반드시 드리프트한다 — 실제로 MFN 9.8%(존재하지 않는 라인)와
+ * landed $3.29(3-SKU 기준 운임 배부)로 두 번 어긋났다. 랜딩과 리포트가 한 스크립트에서
+ * 나오면 세율이 바뀌어도 재실행 한 번으로 둘 다 따라간다.
+ */
+function syncLandingTable(items: ReturnType<typeof computeShipment>['items']) {
+  const path = join(root, 'index.html')
+  const src = readFileSync(path, 'utf-8')
+  const START = '<!-- SAMPLE_ROWS:START -->'
+  const END = '<!-- SAMPLE_ROWS:END -->'
+  const a = src.indexOf(START)
+  const b = src.indexOf(END)
+  if (a === -1 || b === -1) throw new Error('index.html 에 SAMPLE_ROWS 마커가 없다 — 랜딩 표를 동기화할 수 없다')
+
+  const rows = items
+    .map(
+      (x) => `
+            <tr>
+              <td class="px-4 py-3 text-left font-medium">${esc(x.sku)}</td>
+              <td class="px-4 py-3 text-left text-xs text-slate-600">${esc(programBreakdownLabel(x.applied_programs))}</td>
+              <td class="px-4 py-3 font-semibold">${fmtUsd(round2(x.landed_cost))}</td>
+              <td class="px-4 py-3 text-emerald-600">${fmtPct(x.true_margin)}</td>
+              <td class="px-4 py-3">${x.recommended_price !== null ? fmtUsd(round2(x.recommended_price)) : '—'}</td>
+            </tr>`,
+    )
+    .join('')
+
+  let out = src.slice(0, a + START.length) + rows + '\n          ' + src.slice(b)
+
+  // 기준일 캡션도 함께 맞춘다 (원산지 라벨은 손으로 관리)
+  out = out.replace(/rates as of \d{4}-\d{2}-\d{2}/g, `rates as of ${AS_OF}`)
+
+  writeFileSync(path, out, 'utf-8')
+  console.log(`→ index.html 샘플 표 ${items.length}행 동기화`)
+}
 
 function main() {
   const r = computeShipment(SHIP, ITEMS, LEDGER, FEES, CTX)
@@ -127,7 +175,10 @@ ${rows}
 
   <p class="note"><b>Duty programs shown:</b> base MFN (USITC official schedule) and the Section 301 forced-labor
   tariffs effective 2026-07-24. Programs that have ended — the IEEPA tariffs struck down in February 2026 and the
-  Section 122 surcharge that expired 2026-07-24 — are excluded automatically by their effective dates.</p>
+  Section 122 surcharge that expired 2026-07-24 — are excluded automatically by their effective dates.
+  This sample uses Vietnam and India origin, where those two programs are the complete picture. China-origin goods
+  can carry an additional legacy Section 301 duty (Lists 1&ndash;4) that depends on the 8-digit code; LandedIQ flags
+  those lines as <b>unverified</b> rather than showing them as 0%.</p>
 
   <footer>
     ${esc(DISCLAIMER_EN)}<br />
@@ -138,6 +189,8 @@ ${rows}
 
   mkdirSync(join(root, 'public'), { recursive: true })
   writeFileSync(join(root, 'public/sample-report.html'), html, 'utf-8')
+
+  syncLandingTable(r.items.slice(0, LANDING_ROWS))
 
   console.log('── 샘플 리포트 생성 ────────────────────────────')
   for (const x of r.items) {
