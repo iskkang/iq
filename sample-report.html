@@ -3,6 +3,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>LandedIQ — Sample landed cost report</title>
 <link rel="canonical" href="https://www.landediq.app/sample-report.html" />
+<!-- Google tag (gtag.js) — Google Ads 전환 추적. 페이지당 한 번만. -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=AW-18359222502"></script>
+<script>
+  window.dataLayer = window.dataLayer || []; function gtag(){ dataLayer.push(arguments) }
+  gtag('js', new Date()); gtag('config', 'AW-18359222502')
+</script>
 <!-- 진입 자체를 이벤트로 남긴다 — 리포트 열람 대비 가입 전환을 볼 수 있어야 한다 -->
 <script defer data-domain="landediq.app" src="https://plausible.io/js/script.js"></script>
 <script>
@@ -183,6 +189,8 @@
         })
         if (res.status !== 409 && !res.ok) throw new Error('leads ' + res.status)
         window.plausible && window.plausible('email_signup', { props: { intent: 'sample_report_page', utm_source: p.get('utm_source') || '' } })
+        // 라벨이 오면 send_to 를 AW-18359222502/<label> 로 바꾼다
+        if (typeof window.gtag === 'function') window.gtag('event', 'conversion', { send_to: 'AW-18359222502' })
         done()
       } catch (err) {
         btn.disabled = false
