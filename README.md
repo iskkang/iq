@@ -186,6 +186,15 @@ Section 122(07-24 만료) → 강제노동 301 — 마이그레이션 없이 프
 [programs.ts](src/lib/calc/programs.ts) · [migration 0004](supabase/migrations/0004_duty_programs.sql) ·
 테스트 [calc.programs.test.ts](tests/calc.programs.test.ts)
 
+### 원장 유지 SOP
+
+[docs/rate-ledger-sop.md](docs/rate-ledger-sop.md) — 주 2~3시간, 승계 가능하도록 문서화.
+
+핵심은 §1 판별 원칙: **관세표 텍스트는 시행 근거가 아니다.** 오늘 USITC 공식 export 에서
+무효화된 IEEPA 조항과 만료된 Section 122 가 정상 조항 형태로 그대로 나왔다. 그래서
+① 권한(판결·EO) ② 시행(CBP CSMS) ③ 범위(USTR annex·U.S. notes) 3단 교차확인을 거쳐야
+원장에 넣는다.
+
 ### Section 301 확정
 
 ```bash
