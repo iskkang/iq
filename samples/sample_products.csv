@@ -1,0 +1,11 @@
+sku,product_name,description_or_material,unit_cost_usd,origin_country,units_per_shipment,current_price_usd
+MUG-01,Ceramic Coffee Mug 12oz,"stoneware ceramic mug, glazed",2.50,CN,1000,12.99
+TSHIRT-01,Basic Cotton T-Shirt,"100% cotton knit t-shirt, men's",3.20,CN,800,19.99
+BOTTLE-01,Plastic Water Bottle,"plastic sports water bottle, PP",1.80,CN,1500,9.99
+BACKPACK-01,Daypack Backpack,"polyester textile backpack",8.50,CN,400,39.99
+PAN-01,Stainless Frying Pan,"stainless steel kitchen frying pan 28cm",6.40,CN,300,24.99
+CABLE-01,USB-C Charging Cable,"insulated usb charging cable with connectors 1m",0.90,CN,2000,7.99
+TOY-01,Wooden Puzzle Toy,"educational toy puzzle for kids",4.10,VN,600,16.99
+TOWEL-01,Cotton Bath Towel,"100% cotton terry towel",2.20,IN,900,14.99
+HEADSET-01,Bluetooth Headphones,"wireless over-ear headphones",11.00,CN,250,49.99
+PILLOW-01,Throw Pillow,"polyester cushion with cover",5.30,VN,350,21.99

@@ -1,0 +1,47 @@
+import Papa from 'papaparse'
+import type { ShipmentResult } from '../calc/types'
+import { dutyBreakdownLabel } from '../calc/engine'
+import { formatHts } from '../calc/rates'
+import { round2, round4 } from '../calc/money'
+import { DISCLAIMER_EN } from '../disclaimer'
+
+/**
+ * 리포트 CSV (스펙 §2 컬럼 + §4 레이어 내역·기준일 + §1-2 고지).
+ */
+export function buildReportCsv(result: ShipmentResult, shipmentName: string): string {
+  const rows = result.items.map((r) => ({
+    SKU: r.sku,
+    'Unit cost (USD)': round2(r.unit_cost),
+    HTS: formatHts(r.hts_code) + (r.provisional ? ' (provisional)' : ''),
+    'Duty % breakdown': dutyBreakdownLabel(r),
+    'Duty $ (per unit)': round4(r.duty_usd),
+    'Fees (MPF+HMF, per unit)': round4(r.fees_per_unit),
+    'Freight per unit': round4(r.freight_per_unit),
+    'Landed cost (per unit)': round4(r.landed_cost),
+    'Current price': r.current_price !== null ? round2(r.current_price) : '',
+    'True margin': r.true_margin !== null ? `${(r.true_margin * 100).toFixed(2)}%` : '',
+    'Recommended price': r.recommended_price !== null ? round2(r.recommended_price) : '',
+    Notes: r.warnings.join(' / '),
+  }))
+
+  const table = Papa.unparse(rows)
+  const footer = [
+    '',
+    `"Shipment: ${shipmentName}"`,
+    `"Rates as of: ${result.rate_as_of} (rate ledger snapshot)"`,
+    `"MPF (shipment): $${round2(result.totals.mpf_shipment)} / HMF (shipment): $${round2(result.totals.hmf_shipment)} / Allocation basis: ${result.totals.allocation_basis_used}"`,
+    `"${DISCLAIMER_EN}"`,
+  ].join('\r\n')
+
+  return `${table}\r\n${footer}\r\n`
+}
+
+export function downloadCsv(filename: string, csvText: string): void {
+  const blob = new Blob([`﻿${csvText}`], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
