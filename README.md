@@ -54,26 +54,35 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 
 ## 골든 테스트 (광고 집행 전 게이트)
 
-계획서 [golden-test-plan-v1.md](golden-test-plan-v1.md) · 결과 [test-results.md](test-results.md) (`npm run golden`)
+계획서 [golden-test-plan-v1.md](golden-test-plan-v1.md) · 결과 [test-results-v2.md](test-results-v2.md) (실 분류기) ·
+[test-results.md](test-results.md) (mock 기준선)
 
 현재 상태 — **광고 집행 불가**:
 
 | 검증 | 결과 |
 |---|---|
-| §1 HTS 분류 | ⛔ 미집행 — `classify` Edge Function 미배포. mock 참고치 4/10 |
+| §1 HTS 분류 | ❌ 미달 — `claude-haiku-4-5` 5회 평균 **3.2/10** (범위 2–5, 기준 7/10). 함정 문항 TUM·SPK 각 1/5 |
 | §2-1·2 세율 대조 | ❌ 실패 — 원장에 검증된 행 0/67 (전부 test seed·SAMPLE·placeholder) |
 | §2-3 계산 정확도 | ✅ 통과 — 배부 보존·MPF 캡 3경로 확인 |
 | §2-4 원산지 스코핑 | ✅ 통과 — [tests/golden.origin.test.ts](tests/golden.origin.test.ts) |
 | §3 E2E | ⛔ 미집행 — UI 수동 수행 필요 |
 
+§1 미달의 원인 (자세히는 [test-results-v2.md](test-results-v2.md) 진단 절):
+호(4자리)는 8/10 맞히는데 소호(6자리)에서 무너지고, **오답에도 confidence 85~91%** 를 줘서
+리뷰 큐가 0건 — §1-3 human-in-the-loop 안전판이 작동하지 않는다. 10자리 통계 suffix 도 지어낸다
+(후보 20개 중 원장 조회 가능 1개). 같은 입력에 실행마다 답이 달라 재현성도 없다.
+
 분류 백엔드는 자동 선택된다: **배포된 Edge Function**(제품 경로) → `ANTHROPIC_API_KEY` 직접 호출 → mock.
-강제 지정·출력 파일 변경:
 
 ```bash
-npm run golden                                    # 자동 선택
-npm run golden -- --backend=edge --out=test-results-v2.md
-npm run golden -- --backend=anthropic             # ANTHROPIC_API_KEY 필요 (프롬프트는 Edge Function 소스에서 읽음)
+npm run golden                                     # 자동 선택 (실 분류기면 5회 반복)
+npm run golden -- --runs=5 --out=test-results-v2.md
+npm run golden -- --backend=anthropic              # 배포 없이 ANTHROPIC_API_KEY 로 (프롬프트는 Edge Function 소스에서 읽음)
+npm run golden -- --backend=mock                   # 결정론 기준선
 ```
+
+LLM 출력이 비결정론적이라 실 분류기일 때는 기본 5회 반복 후 평균·범위·SKU별 안정성을 낸다.
+1회 표본으로 게이트를 판정하지 않기 위한 것이다.
 
 `supabase/seed/hts_seed_golden_supplement.csv` 는 골든 실행을 완결시키기 위한 **자리표시자**입니다
 (9617·9405.21·9506.91·4419.11/12). USITC 확인 전까지 어떤 판단에도 쓰지 마세요.
