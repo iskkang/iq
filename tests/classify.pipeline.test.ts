@@ -17,7 +17,7 @@ import {
   normalizeForCache,
   parseStageA,
   parseStageB,
-  stageBUser,
+  stageBPrompt,
   tallyVotes,
 } from '../supabase/functions/classify/pipeline'
 import type { CatalogLine, ClassifyInput, Selection, StageAResult } from '../supabase/functions/classify/pipeline'
@@ -245,29 +245,59 @@ describe('정규화 해시 캐시 — 동일 입력 재호출 금지', () => {
   })
 })
 
-describe('프롬프트 조립', () => {
+describe('프롬프트 조립 — 캐시 프리픽스 분리', () => {
   const lines: CatalogLine[] = Array.from({ length: MAX_LINES_PER_HEADING + 20 }, (_, i) => ({
     code: String(9617000000 + i),
     heading: '9617',
     description: `line ${i}`,
   }))
+  const other: CatalogLine[] = [{ code: '4202923120', heading: '4202', description: 'backpack' }]
 
   it('보기는 호당 상한까지만 넣는다 (프롬프트 폭주 방지)', () => {
-    const u = stageBUser([item('a')], new Map([['a', stageA]]), new Map([['9617', lines]]))
-    const shown = [...u.matchAll(/^ {2}(\d{10}) /gm)].length
-    expect(shown).toBe(MAX_LINES_PER_HEADING)
+    const { catalog } = stageBPrompt([item('a')], new Map([['a', stageA]]), new Map([['9617', lines]]))
+    expect([...catalog.matchAll(/^ {2}(\d{10}) /gm)].length).toBe(MAX_LINES_PER_HEADING)
   })
 
-  it('보기 블록에 item_id 와 step-1 속성이 들어간다', () => {
-    const u = stageBUser([item('a')], new Map([['a', stageA]]), new Map([['9617', lines]]))
-    expect(u).toContain('item_id: a')
-    expect(u).toContain('material=steel')
-    expect(u).toContain('OPTIONS')
+  it('카탈로그와 질문이 분리된다 — 상품 정보는 캐시 경계 뒤로', () => {
+    const { catalog, questions } = stageBPrompt([item('a')], new Map([['a', stageA]]), new Map([['9617', lines]]))
+    // 캐시 프리픽스에는 상품별 정보가 들어가면 안 된다 (배치마다 달라져 캐시가 깨진다)
+    expect(catalog).not.toContain('item_id')
+    expect(catalog).not.toContain('Insulated tumbler')
+    expect(questions).toContain('item_id: a')
+    expect(questions).toContain('material=steel')
+    expect(questions).toContain('allowed catalog sections: 9617')
   })
 
-  it('호 후보가 없으면 보기 없음을 명시한다', () => {
-    const u = stageBUser([item('a')], new Map(), new Map())
-    expect(u).toContain('(no options available)')
+  it('같은 호 집합이면 카탈로그가 바이트 동일하다 (캐시 히트 조건)', () => {
+    const byHeading = new Map([['9617', lines], ['4202', other]])
+    const batch1 = stageBPrompt([item('a')], new Map([['a', stageA]]), byHeading)
+    const batch2 = stageBPrompt([item('zzz')], new Map([['zzz', { ...stageA, item_id: 'zzz' }]]), byHeading)
+    // 상품이 달라도 호가 같으면 프리픽스가 같아야 캐시가 걸린다
+    expect(batch1.catalog).toBe(batch2.catalog)
+    expect(batch1.questions).not.toBe(batch2.questions)
+  })
+
+  it('호 순서가 달라도 카탈로그는 같다 (정렬로 프리픽스 정렬)', () => {
+    const byHeading = new Map([['9617', lines], ['4202', other]])
+    const a1 = stageBPrompt(
+      [item('a')],
+      new Map([['a', { ...stageA, headings: ['9617', '4202'] }]]),
+      byHeading,
+    )
+    const a2 = stageBPrompt(
+      [item('a')],
+      new Map([['a', { ...stageA, headings: ['4202', '9617'] }]]),
+      byHeading,
+    )
+    expect(a1.catalog).toBe(a2.catalog)
+    // 오름차순이므로 4202 섹션이 먼저 온다
+    expect(a1.catalog.indexOf('[heading 4202]')).toBeLessThan(a1.catalog.indexOf('[heading 9617]'))
+  })
+
+  it('호 후보가 없으면 빈 카탈로그와 안내 문구', () => {
+    const { catalog, questions } = stageBPrompt([item('a')], new Map(), new Map())
+    expect(catalog).not.toContain('[heading')
+    expect(questions).toContain('(none — no heading proposed)')
   })
 })
 

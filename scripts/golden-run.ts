@@ -45,7 +45,7 @@ import {
   parseStageA,
   parseStageB,
   stageAUser,
-  stageBUser,
+  stageBPrompt,
   tallyVotes,
 } from '../supabase/functions/classify/pipeline'
 import type { CatalogLine } from '../supabase/functions/classify/pipeline'
@@ -151,7 +151,14 @@ async function classifyViaEdgeHttp(items: ClassifyItemInput[]): Promise<Classify
   return out
 }
 
-async function anthropicJson(system: string, user: string): Promise<unknown> {
+/** cached 앞부분에 cache_control — stage-B 카탈로그가 배치 간 캐시 프리픽스가 된다 */
+async function anthropicJson(system: string, user: string, cached?: string): Promise<unknown> {
+  const content = cached
+    ? [
+        { type: 'text', text: cached, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: user },
+      ]
+    : [{ type: 'text', text: user }]
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY!, 'anthropic-version': '2023-06-01' },
@@ -160,7 +167,7 @@ async function anthropicJson(system: string, user: string): Promise<unknown> {
       max_tokens: 4096,
       temperature: TEMPERATURE,
       system,
-      messages: [{ role: 'user', content: user }],
+      messages: [{ role: 'user', content }],
     }),
   })
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`)
@@ -178,7 +185,7 @@ async function anthropicJson(system: string, user: string): Promise<unknown> {
  * — 두 벌이 되면 §검증1 점수가 무의미해진다.
  */
 async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<ClassifyBatchResult[]> {
-  const catalog = loadCatalog()
+  const catalogByHeading = loadCatalog()
   const out: ClassifyBatchResult[] = []
 
   for (let i = 0; i < items.length; i += 10) {
@@ -190,7 +197,7 @@ async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<Classif
     // 호에 해당하는 USITC 실제 라인
     const linesByHeading = new Map<string, CatalogLine[]>()
     for (const h of new Set([...stageA.values()].flatMap((a) => a.headings))) {
-      linesByHeading.set(h, catalog.get(h) ?? [])
+      linesByHeading.set(h, catalogByHeading.get(h) ?? [])
     }
     const allowed = new Map<string, Set<string>>()
     for (const item of batch) {
@@ -200,11 +207,11 @@ async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<Classif
       allowed.set(item.id, set)
     }
 
-    // (b) 보기 중 선택 × k=3 (동시)
-    const userB = stageBUser(batch, stageA, linesByHeading)
+    // (b) 보기 중 선택 (k=VOTES). catalog 블록이 캐시 프리픽스
+    const { catalog, questions } = stageBPrompt(batch, stageA, linesByHeading)
     const rounds = await Promise.all(
       Array.from({ length: VOTES }, async () => {
-        const sel = parseStageB(await anthropicJson(STAGE_B_SYSTEM, userB))
+        const sel = parseStageB(await anthropicJson(STAGE_B_SYSTEM, questions, catalog))
         const strays = batch.filter((it) => {
           const s = sel.get(it.id)
           return !s || !allowed.get(it.id)?.has(s.hts_code)
@@ -213,9 +220,10 @@ async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<Classif
           const retry = parseStageB(
             await anthropicJson(
               STAGE_B_SYSTEM,
-              `${userB}\n\nYour previous answer used codes that were NOT in the option list for: ${strays
+              `${questions}\n\nYour previous answer used codes that were NOT in the catalog for: ${strays
                 .map((s) => s.id)
-                .join(', ')}. Return ONLY codes copied exactly from each product's OPTIONS block.`,
+                .join(', ')}. Return ONLY codes copied exactly from the catalog sections allowed for each product.`,
+              catalog,
             ),
           )
           for (const s of strays) {
@@ -540,7 +548,7 @@ async function main() {
   const trapHits = scored.filter((s) => TRAP_SKUS.includes(s.sku) && s.hit).length
 
   // 자동확정됐지만 6자리가 틀린 건 — §1-3 안전판이 걸러내지 못한 오분류
-  const wrongButConfident = scored.filter((s) => s.status === 'auto_confirmed' && !s.hit)
+  const wrongButConfident = scored.filter((s) => s.status !== 'user_confirmed' && !s.hit)
 
   // 후보 10자리가 원장 base_mfn 행으로 해석되는가 (duty 조회 가능 여부)
   const ledgerBase = LEDGER.filter((r) => r.layer === 'base_mfn')
@@ -566,12 +574,14 @@ async function main() {
       for (const it of g) {
         total++
         const isHit = TARGETS[it.sku] ? hitsTarget(it.candidates, TARGETS[it.sku].six).hit : false
-        if (it.status === 'auto_confirmed') autoConfirmed++
+        // v3 부터 자동확정이 없다 — suggested 는 전부 사람 확인 대기다.
+        // 아래 두 지표는 "확인 없이 그대로 쓰면 어떻게 되는가"를 재는 용도로 남긴다.
+        if (it.status === 'suggested') autoConfirmed++
         if (it.consensus?.unanimous) unanimousCount++
         outOfOptions += it.consensus?.out_of_options ?? 0
         if (!isHit) {
           wrong++
-          if (it.status === 'needs_review') wrongIsolated++
+          if (it.status === 'user_confirmed') wrongIsolated++
         }
       }
     }
@@ -697,7 +707,7 @@ async function main() {
     `**${isReal ? '점수' : 'mock 점수'}: ${hits}/10** (통과 기준 7/10 → ${hits >= 7 ? '**통과**' : '**미달**'}) · 함정 문항(🎯) ${trapHits}/2`,
   )
   p()
-  p(`needs_review 로 격리된 건: ${gated.filter((g) => g.status === 'needs_review').map((g) => g.sku).join(', ') || '없음'}`)
+  p(`needs_review 로 격리된 건: ${gated.filter((g) => g.status === 'suggested').map((g) => g.sku).join(', ') || '없음'}`)
   p()
   if (!isReal) {
     p('> 다시 강조: 이 점수는 mock 키워드 매처의 점수다. **제품이 실제로 쓰는 LLM 분류기 점수가 아니다.**')
@@ -780,7 +790,7 @@ async function main() {
     p(
       `| 자동확정됐는데 오답 | **${wrongButConfident.length}/10** | §1-3 안전판을 빠져나간 오분류 — 낮을수록 좋다 |`,
     )
-    p(`| needs_review 로 격리 | **${gated.filter((g) => g.status === 'needs_review').length}/10** | 리뷰 큐로 간 건 |`)
+    p(`| needs_review 로 격리 | **${gated.filter((g) => g.status === 'suggested').length}/10** | 리뷰 큐로 간 건 |`)
     p(`| 후보당 개수 | 평균 ${(allCands.length / scored.length).toFixed(1)}개 | 스펙 §5 는 2~3개 요구 |`)
     p(`| 통계 suffix 가 0000 | ${zeroPadded}/${allCands.length} | 10자리를 0 으로 채운 정황 |`)
     p(`| 원장 base_mfn 으로 해석 가능 | ${resolvable}/${allCands.length} | duty 조회가 실제로 되는 후보 수 |`)

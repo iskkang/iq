@@ -22,7 +22,7 @@ import {
   parseStageA,
   parseStageB,
   stageAUser,
-  stageBUser,
+  stageBPrompt,
   tallyVotes,
   STAGE_A_SYSTEM,
   STAGE_B_SYSTEM,
@@ -45,7 +45,26 @@ const admin = () =>
     auth: { persistSession: false },
   })
 
-async function callAnthropic(apiKey: string, model: string, system: string, user: string): Promise<unknown> {
+type UserBlock = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }
+
+/**
+ * `cached` 로 넘긴 앞부분에 cache_control 을 건다 (프롬프트 캐시 프리픽스).
+ * stage-B 의 보기 카탈로그가 여기 들어가면, 같은 호를 쓰는 다음 배치는
+ * 그 구간을 캐시에서 읽는다 (입력가 0.1배).
+ */
+async function callAnthropic(
+  apiKey: string,
+  model: string,
+  system: string,
+  user: string,
+  cached?: string,
+): Promise<unknown> {
+  const content: UserBlock[] = cached
+    ? [
+        { type: 'text', text: cached, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: user },
+      ]
+    : [{ type: 'text', text: user }]
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
@@ -54,7 +73,7 @@ async function callAnthropic(apiKey: string, model: string, system: string, user
       max_tokens: 4096,
       temperature: TEMPERATURE,
       system,
-      messages: [{ role: 'user', content: user }],
+      messages: [{ role: 'user', content }],
     }),
   })
   if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`)
@@ -123,10 +142,10 @@ Deno.serve(async (req: Request) => {
       }
 
       // ── (b) 보기 중 선택 × k=3 투표 ──────────────────────────
-      const userB = stageBUser(todo, stageAOut, linesByHeading)
+      const { catalog, questions } = stageBPrompt(todo, stageAOut, linesByHeading)
       const rounds = await Promise.all(
         Array.from({ length: VOTES }, async () => {
-          let sel = parseStageB(await callAnthropic(apiKey, model, STAGE_B_SYSTEM, userB))
+          const sel = parseStageB(await callAnthropic(apiKey, model, STAGE_B_SYSTEM, questions, catalog))
           // 보기 밖 코드가 하나라도 있으면 1회 재시도 (요구사항 1)
           const strays = todo.filter((i) => {
             const s = sel.get(i.id)

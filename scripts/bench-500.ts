@@ -45,7 +45,7 @@ import {
   parseStageA,
   parseStageB,
   stageAUser,
-  stageBUser,
+  stageBPrompt,
 } from '../supabase/functions/classify/pipeline'
 import type { CatalogLine } from '../supabase/functions/classify/pipeline'
 
@@ -108,7 +108,18 @@ const csv500 = rows.join('\n')
 // ── B: 실 LLM 비용 측정 ─────────────────────────────────────
 interface CallUsage { model: string; usage: TokenUsage }
 
-async function callWithUsage(model: string, system: string, user: string): Promise<{ parsed: unknown; call: CallUsage }> {
+async function callWithUsage(
+  model: string,
+  system: string,
+  user: string,
+  cached?: string,
+): Promise<{ parsed: unknown; call: CallUsage }> {
+  const content = cached
+    ? [
+        { type: 'text', text: cached, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: user },
+      ]
+    : [{ type: 'text', text: user }]
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -116,7 +127,7 @@ async function callWithUsage(model: string, system: string, user: string): Promi
       'x-api-key': dotenv('ANTHROPIC_API_KEY')!,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({ model, max_tokens: 4096, temperature: TEMPERATURE, system, messages: [{ role: 'user', content: user }] }),
+    body: JSON.stringify({ model, max_tokens: 4096, temperature: TEMPERATURE, system, messages: [{ role: 'user', content }] }),
   })
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 200)}`)
   const data = await res.json()
@@ -155,18 +166,18 @@ async function measureBatch(batch: Array<{ id: string; product_name: string; des
   for (const h of new Set([...stageA.values()].flatMap((x) => x.headings))) {
     linesByHeading.set(h, (byHeading.get(h) ?? []).slice(0, MAX_LINES_PER_HEADING))
   }
-  const userB = stageBUser(batch, stageA, linesByHeading)
+  const { catalog, questions } = stageBPrompt(batch, stageA, linesByHeading)
 
   const votes = await Promise.all(
     Array.from({ length: VOTES }, async () => {
-      const r = await callWithUsage(PRIMARY_MODEL, STAGE_B_SYSTEM, userB)
+      const r = await callWithUsage(PRIMARY_MODEL, STAGE_B_SYSTEM, questions, catalog)
       calls.push(r.call)
       return parseStageB(r.parsed)
     }),
   )
 
   // 교차검증 (haiku) — 리뷰 큐 정렬용 1표
-  const cross = await callWithUsage(CROSS_CHECK_MODEL, STAGE_B_SYSTEM, userB)
+  const cross = await callWithUsage(CROSS_CHECK_MODEL, STAGE_B_SYSTEM, questions, catalog)
   calls.push(cross.call)
   const crossSel = parseStageB(cross.parsed)
 
@@ -283,13 +294,23 @@ async function main() {
 
   let total = 0
   console.log('')
-  console.log('| 모델 | 호출 | in tok | out tok | USD |')
-  console.log('|---|---|---|---|---|')
+  console.log('| 모델 | 호출 | in | 캐시 write | 캐시 read | out | USD |')
+  console.log('|---|---|---|---|---|---|---|')
   for (const [model, u] of byModel) {
     const n = measured.calls.filter((c) => c.model === model).length
     const usd = costOf(model, u)
     total += usd
-    console.log(`| ${model} | ${n} | ${u.input_tokens.toLocaleString()} | ${u.output_tokens.toLocaleString()} | $${usd.toFixed(4)} |`)
+    console.log(
+      `| ${model} | ${n} | ${u.input_tokens.toLocaleString()} | ${(u.cache_creation_input_tokens ?? 0).toLocaleString()} | ${(u.cache_read_input_tokens ?? 0).toLocaleString()} | ${u.output_tokens.toLocaleString()} | $${usd.toFixed(4)} |`,
+    )
+  }
+  const writes = [...byModel.values()].reduce((a, u) => a + (u.cache_creation_input_tokens ?? 0), 0)
+  const reads = [...byModel.values()].reduce((a, u) => a + (u.cache_read_input_tokens ?? 0), 0)
+  if (writes > 0 && reads === 0) {
+    console.log('')
+    console.log('⚠ 이 표본은 배치 1개라 캐시를 **쓰기만 하고 읽지 못했다** (write 1.25배 프리미엄만 지불).')
+    console.log('  실제 500 SKU 실행에서는 같은 호를 쓰는 뒤 배치가 read(0.1배)로 회수하므로')
+    console.log('  아래 SKU당 비용은 **상한**이다. 회수 폭은 카탈로그의 호 중복도에 달렸다.')
   }
 
   const perSku = total / SAMPLE

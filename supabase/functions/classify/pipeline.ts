@@ -13,8 +13,17 @@
 export const PROMPT_VERSION = 'v2-constrained'
 /** 결정론 확보 — 같은 입력에 같은 답 (요구사항 2) */
 export const TEMPERATURE = 0
-/** 만장일치 투표 수 (요구사항 3) */
-export const VOTES = 3
+/**
+ * stage-B 투표 수.
+ *
+ * k=1 이다. 자동확정을 없앤 순간(v3) 만장일치는 아무것도 게이트하지 않는다 —
+ * temperature 0 에서 94~100% 동일 답이 나오므로 상수에 3배를 내는 셈이었다.
+ * sonnet 호출이 배치당 4회 → 2회로 줄고 정확도 손실은 없다.
+ *
+ * 투표를 다시 늘리려면 **서로 다른 조건으로** 쳐야 의미가 있다
+ * (호 후보를 하나씩 빼거나 보기 순서를 섞는 식). 같은 프롬프트 반복은 무의미하다.
+ */
+export const VOTES = 1
 /** 한 호당 보기로 제시할 최대 라인 수 — 프롬프트 폭주 방지 */
 export const MAX_LINES_PER_HEADING = 60
 
@@ -116,32 +125,81 @@ export function stageAUser(items: ClassifyInput[]): string {
   )}`
 }
 
+export interface StageBPrompt {
+  /**
+   * 호별 보기 목록 — **프롬프트 캐시 프리픽스**.
+   *
+   * 호 오름차순으로 정렬해 배치 간 앞부분이 겹치게 만든다. 프롬프트 캐싱은
+   * 프리픽스 매칭이라, 같은 호를 쓰는 배치는 그 구간까지 캐시 히트가 난다
+   * (읽기 0.1배). 예전에는 상품 질문과 보기가 뒤섞여 배치마다 프롬프트가
+   * 통째로 달라 캐시가 전혀 걸리지 않았다.
+   */
+  catalog: string
+  /** 상품별 질문 — 배치마다 다르므로 캐시 경계 뒤에 둔다 */
+  questions: string
+}
+
+/**
+ * stage-B 프롬프트를 캐시 가능한 두 덩이로 나눠 만든다.
+ *
+ * 호출부는 catalog 블록에 `cache_control` 을 걸고 questions 를 그 뒤에 붙인다.
+ */
+export function stageBPrompt(
+  items: ClassifyInput[],
+  stageA: Map<string, StageAResult>,
+  linesByHeading: Map<string, CatalogLine[]>,
+): StageBPrompt {
+  // 이 배치가 쓰는 호 전체를 모아 오름차순 — 정렬이 프리픽스 정렬을 만든다
+  const headings = [...new Set([...stageA.values()].flatMap((a) => a.headings))].sort()
+
+  const sections = headings.map((h) => {
+    const lines = (linesByHeading.get(h) ?? []).slice(0, MAX_LINES_PER_HEADING)
+    const body = lines.length > 0 ? lines.map((l) => `  ${l.code}  ${l.description}`).join('\n') : '  (no lines)'
+    return `[heading ${h}]\n${body}`
+  })
+
+  const catalog = [
+    'HTS OPTION CATALOG — the only codes you may return.',
+    'Each section lists the real USITC lines for one 4-digit heading.',
+    '',
+    sections.join('\n\n'),
+  ].join('\n')
+
+  const blocks = items.map((item) => {
+    const a = stageA.get(item.id)
+    const hs = a?.headings ?? []
+    return [
+      `--- item_id: ${item.id}`,
+      `product: ${item.product_name}`,
+      `description/material: ${item.description_or_material}`,
+      a
+        ? `step-1 attributes: material=${a.attributes.material}; use=${a.attributes.use}; construction=${a.attributes.construction}`
+        : '',
+      hs.length > 0
+        ? `allowed catalog sections: ${hs.join(', ')}`
+        : 'allowed catalog sections: (none — no heading proposed)',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  })
+
+  const questions = [
+    "Pick exactly one catalog code per product, from that product's allowed sections only.",
+    '',
+    blocks.join('\n\n'),
+  ].join('\n')
+
+  return { catalog, questions }
+}
+
+/** @deprecated stageBPrompt 를 쓸 것 — 캐시 경계가 없어 배치마다 전량 재과금된다 */
 export function stageBUser(
   items: ClassifyInput[],
   stageA: Map<string, StageAResult>,
   linesByHeading: Map<string, CatalogLine[]>,
 ): string {
-  const blocks = items.map((item) => {
-    const a = stageA.get(item.id)
-    const headings = a?.headings ?? []
-    const options: string[] = []
-    for (const h of headings) {
-      for (const line of (linesByHeading.get(h) ?? []).slice(0, MAX_LINES_PER_HEADING)) {
-        options.push(`  ${line.code}  ${line.description}`)
-      }
-    }
-    return [
-      `--- item_id: ${item.id}`,
-      `product: ${item.product_name}`,
-      `description/material: ${item.description_or_material}`,
-      a ? `step-1 attributes: material=${a.attributes.material}; use=${a.attributes.use}; construction=${a.attributes.construction}` : '',
-      `OPTIONS (choose exactly one code from this list):`,
-      options.length > 0 ? options.join('\n') : '  (no options available)',
-    ]
-      .filter(Boolean)
-      .join('\n')
-  })
-  return `Step 2 — pick one listed code per product.\n\n${blocks.join('\n\n')}`
+  const { catalog, questions } = stageBPrompt(items, stageA, linesByHeading)
+  return `${catalog}\n\n${questions}`
 }
 
 // ── 응답 파싱 ─────────────────────────────────────────────────
