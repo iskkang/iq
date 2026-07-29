@@ -1,15 +1,37 @@
 /**
- * HTS 분류 Edge Function (스펙 §5).
- * 입력: { items: [{ id, product_name, description_or_material, origin_country }] } (≤10개)
- * 출력: { results: [{ item_id, candidates: [{hts_code(10자리), confidence, rationale}]×2~3 }],
- *         meta: { model, prompt_version }, raw_output }
+ * HTS 분류 Edge Function — 2단계 선택형 (스펙 §5, 파이프라인 v2).
  *
- * LLM은 후보 추정만 한다. 관세 계산은 전부 클라이언트의 결정론적 엔진 (§1-1).
+ * v1 대비 변경 (골든 v2 측정에서 드러난 문제에 대응):
+ *   - 자유 생성 금지. 호 후보 → USITC 실제 라인 보기 중 선택. 보기 밖이면 재시도 1회
+ *   - temperature 0
+ *   - 정규화 해시로 분류 캐시 (동일 입력 재호출 금지)
+ *   - auto_confirmed = k=3 만장일치 AND 원장 실존. confidence 는 참고 표기로 강등
+ *
  * 배포: supabase functions deploy classify
  * 시크릿: supabase secrets set ANTHROPIC_API_KEY=... [CLASSIFY_MODEL=...]
+ * 선행: supabase/migrations/0002_hts_lines.sql + npm run hts:seed
  */
+import { createClient } from 'jsr:@supabase/supabase-js@2'
+import {
+  PROMPT_VERSION,
+  TEMPERATURE,
+  VOTES,
+  cacheKey,
+  decideStatus,
+  extractJson,
+  parseStageA,
+  parseStageB,
+  stageAUser,
+  stageBUser,
+  tallyVotes,
+  STAGE_A_SYSTEM,
+  STAGE_B_SYSTEM,
+  type CatalogLine,
+  type ClassifyInput,
+  type Selection,
+  type StageAResult,
+} from './pipeline.ts'
 
-const PROMPT_VERSION = 'v1'
 const DEFAULT_MODEL = 'claude-haiku-4-5'
 const MAX_ITEMS = 10
 
@@ -18,92 +40,30 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const SYSTEM_PROMPT = `You are a U.S. HTS (Harmonized Tariff Schedule) classification assistant for import cost estimation.
-For each product, propose 2-3 candidate HTS codes at the 10-digit statistical level.
+const admin = () =>
+  createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
+    auth: { persistSession: false },
+  })
 
-Rules:
-- hts_code: exactly 10 digits, no dots.
-- confidence: 0 to 1. Be honest — if the description is vague or could fall under multiple headings, use confidence below 0.7.
-- rationale: ONE short sentence citing the material/use that drives the classification.
-- These are estimates for cost planning only, not legal rulings.
-
-Respond with ONLY valid JSON, no markdown fences, in this exact shape:
-{"results":[{"item_id":"...","candidates":[{"hts_code":"1234567890","confidence":0.85,"rationale":"..."}]}]}`
-
-interface InItem {
-  id: string
-  product_name: string
-  description_or_material: string
-  origin_country: string
-}
-
-function extractJson(text: string): unknown {
-  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
-  const start = cleaned.indexOf('{')
-  const end = cleaned.lastIndexOf('}')
-  if (start < 0 || end < 0) throw new Error('no JSON object in model output')
-  return JSON.parse(cleaned.slice(start, end + 1))
-}
-
-async function callAnthropic(apiKey: string, model: string, items: InItem[]): Promise<{ parsed: unknown; raw: unknown }> {
-  const userMsg = `Classify these products:\n${JSON.stringify(
-    items.map((i) => ({
-      item_id: i.id,
-      product_name: i.product_name,
-      description_or_material: i.description_or_material,
-      origin_country: i.origin_country,
-    })),
-    null,
-    2,
-  )}`
-
+async function callAnthropic(apiKey: string, model: string, system: string, user: string): Promise<unknown> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
       model,
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMsg }],
+      max_tokens: 4096,
+      temperature: TEMPERATURE,
+      system,
+      messages: [{ role: 'user', content: user }],
     }),
   })
-  if (!res.ok) {
-    const body = await res.text()
-    throw new Error(`Anthropic API ${res.status}: ${body.slice(0, 300)}`)
-  }
+  if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`)
   const data = await res.json()
   const text: string = (data.content ?? [])
     .filter((b: { type: string }) => b.type === 'text')
     .map((b: { text: string }) => b.text)
     .join('')
-  return { parsed: extractJson(text), raw: data }
-}
-
-function sanitize(parsed: unknown, items: InItem[]) {
-  const byId = new Map<string, { hts_code: string; confidence: number; rationale: string }[]>()
-  const resultsRaw = (parsed as { results?: unknown[] })?.results ?? []
-  for (const r of resultsRaw as Array<Record<string, unknown>>) {
-    const id = String(r.item_id ?? '')
-    const cands = Array.isArray(r.candidates) ? r.candidates : []
-    const clean = cands
-      .map((c) => {
-        const rec = c as Record<string, unknown>
-        return {
-          hts_code: String(rec.hts_code ?? '').replace(/\D/g, ''),
-          confidence: Math.min(Math.max(Number(rec.confidence) || 0, 0), 1),
-          rationale: String(rec.rationale ?? '').slice(0, 300),
-        }
-      })
-      .filter((c) => c.hts_code.length === 10)
-      .sort((a, b) => b.confidence - a.confidence)
-      .slice(0, 3)
-    if (id && clean.length > 0) byId.set(id, clean)
-  }
-  return items.map((i) => ({ item_id: i.id, candidates: byId.get(i.id) ?? [] }))
+  return extractJson(text)
 }
 
 Deno.serve(async (req: Request) => {
@@ -113,30 +73,158 @@ Deno.serve(async (req: Request) => {
     if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set (supabase secrets set)')
     const model = Deno.env.get('CLASSIFY_MODEL') ?? DEFAULT_MODEL
 
-    const { items } = (await req.json()) as { items: InItem[] }
+    const body = (await req.json()) as { items: ClassifyInput[]; no_cache?: boolean }
+    const items = body.items
     if (!Array.isArray(items) || items.length === 0 || items.length > MAX_ITEMS) {
       return new Response(JSON.stringify({ error: `items must be 1~${MAX_ITEMS}` }), {
         status: 400,
         headers: { ...corsHeaders, 'content-type': 'application/json' },
       })
     }
+    const db = admin()
 
-    // 파싱 실패 시 1회 재시도 (스펙 §5 JSON 출력 강제)
-    let parsed: unknown
-    let raw: unknown
-    try {
-      ;({ parsed, raw } = await callAnthropic(apiKey, model, items))
-    } catch (e) {
-      if (e instanceof SyntaxError || String(e).includes('no JSON')) {
-        ;({ parsed, raw } = await callAnthropic(apiKey, model, items))
-      } else throw e
+    // ── 캐시 조회 (요구사항 2) ─────────────────────────────────
+    const keys = await Promise.all(items.map((i) => cacheKey(i, model)))
+    const cached = new Map<string, unknown>()
+    if (!body.no_cache) {
+      const { data } = await db.from('classification_cache').select('cache_key, result').in('cache_key', keys)
+      for (const row of data ?? []) cached.set(row.cache_key, row.result)
     }
+    const todo = items.filter((_, i) => !cached.has(keys[i]))
+
+    let results: unknown[] = []
+    let stageAOut = new Map<string, StageAResult>()
+
+    if (todo.length > 0) {
+      // ── (a) 속성 + 4자리 호 후보 ─────────────────────────────
+      stageAOut = parseStageA(await callAnthropic(apiKey, model, STAGE_A_SYSTEM, stageAUser(todo)))
+
+      // ── 호에 해당하는 USITC 실제 라인 조회 ───────────────────
+      const headings = [...new Set([...stageAOut.values()].flatMap((a) => a.headings))]
+      const linesByHeading = new Map<string, CatalogLine[]>()
+      if (headings.length > 0) {
+        const { data, error } = await db
+          .from('hts_lines')
+          .select('code, heading, description')
+          .in('heading', headings)
+          .order('code')
+        if (error) throw new Error(`hts_lines lookup failed: ${error.message} (run npm run hts:seed?)`)
+        for (const l of (data ?? []) as CatalogLine[]) {
+          if (!linesByHeading.has(l.heading)) linesByHeading.set(l.heading, [])
+          linesByHeading.get(l.heading)!.push(l)
+        }
+      }
+      const allowed = new Map<string, Set<string>>()
+      for (const item of todo) {
+        const set = new Set<string>()
+        for (const h of stageAOut.get(item.id)?.headings ?? [])
+          for (const l of linesByHeading.get(h) ?? []) set.add(l.code)
+        allowed.set(item.id, set)
+      }
+
+      // ── (b) 보기 중 선택 × k=3 투표 ──────────────────────────
+      const userB = stageBUser(todo, stageAOut, linesByHeading)
+      const rounds = await Promise.all(
+        Array.from({ length: VOTES }, async () => {
+          let sel = parseStageB(await callAnthropic(apiKey, model, STAGE_B_SYSTEM, userB))
+          // 보기 밖 코드가 하나라도 있으면 1회 재시도 (요구사항 1)
+          const strays = todo.filter((i) => {
+            const s = sel.get(i.id)
+            return !s || !allowed.get(i.id)?.has(s.hts_code)
+          })
+          if (strays.length > 0) {
+            const retryMsg = `${userB}\n\nYour previous answer used codes that were NOT in the option list for: ${strays
+              .map((s) => s.id)
+              .join(', ')}. Return ONLY codes copied exactly from each product's OPTIONS block.`
+            const retry = parseStageB(await callAnthropic(apiKey, model, STAGE_B_SYSTEM, retryMsg))
+            for (const s of strays) {
+              const r = retry.get(s.id)
+              if (r && allowed.get(s.id)?.has(r.hts_code)) sel.set(s.id, r)
+            }
+          }
+          return sel
+        }),
+      )
+
+      // ── 집계 + 원장 실존 확인 (요구사항 3) ───────────────────
+      const consensusCodes = new Set<string>()
+      const outcomes = todo.map((item) => {
+        const perVote = rounds.map((sel) => {
+          const s = sel.get(item.id)
+          return { selection: s, valid: !!s && !!allowed.get(item.id)?.has(s.hts_code) }
+        })
+        const o = tallyVotes(item, stageAOut.get(item.id), perVote)
+        if (o.consensus) consensusCodes.add(o.consensus)
+        return o
+      })
+
+      const inLedger = new Set<string>()
+      if (consensusCodes.size > 0) {
+        const { data } = await db
+          .from('rate_ledger')
+          .select('hts_code')
+          .eq('layer', 'base_mfn')
+          .in('hts_code', [...consensusCodes])
+        for (const r of data ?? []) inLedger.add(r.hts_code)
+      }
+
+      const fresh = outcomes.map((o) => {
+        const { status, reason } = decideStatus(o, o.consensus ? inLedger.has(o.consensus) : false)
+        // 후보 목록: 투표에서 나온 선택들을 중복 제거해 UI 에 그대로 노출
+        const byCode = new Map<string, Selection>()
+        for (const s of o.selections) if (!byCode.has(s.hts_code)) byCode.set(s.hts_code, s)
+        return {
+          item_id: o.item_id,
+          candidates: [...byCode.values()].map((s) => ({
+            hts_code: s.hts_code,
+            confidence: s.confidence,
+            rationale: s.rationale,
+          })),
+          attributes: o.attributes,
+          headings: o.headings,
+          consensus: {
+            code: o.consensus,
+            unanimous: o.unanimous,
+            votes: o.votes,
+            in_ledger: o.consensus ? inLedger.has(o.consensus) : false,
+            out_of_options: o.out_of_options,
+            status,
+            reason,
+          },
+        }
+      })
+
+      // 캐시 적재
+      const rows = fresh.map((f) => ({
+        cache_key: keys[items.findIndex((i) => i.id === f.item_id)],
+        model,
+        prompt_version: PROMPT_VERSION,
+        result: f,
+      }))
+      if (!body.no_cache && rows.length > 0) {
+        await db.from('classification_cache').upsert(rows, { onConflict: 'cache_key' })
+      }
+      results = fresh
+    }
+
+    // 캐시 히트분 합치기 — 입력 순서 유지
+    const byId = new Map<string, unknown>()
+    for (const r of results) byId.set((r as { item_id: string }).item_id, r)
+    items.forEach((item, i) => {
+      if (cached.has(keys[i])) byId.set(item.id, { ...(cached.get(keys[i]) as object), item_id: item.id, cached: true })
+    })
+    const ordered = items.map((i) => byId.get(i.id) ?? { item_id: i.id, candidates: [], consensus: null })
 
     return new Response(
       JSON.stringify({
-        results: sanitize(parsed, items),
-        meta: { model, prompt_version: PROMPT_VERSION },
-        raw_output: raw,
+        results: ordered,
+        meta: {
+          model,
+          prompt_version: PROMPT_VERSION,
+          temperature: TEMPERATURE,
+          votes: VOTES,
+          cache_hits: cached.size,
+        },
       }),
       { headers: { ...corsHeaders, 'content-type': 'application/json' } },
     )

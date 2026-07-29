@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { classifyItems, type ClassifyBackend } from '../lib/classify/client'
-import { CONFIDENCE_THRESHOLD } from '../lib/classify/types'
 import { formatHts, isValidHts10, normalizeHts } from '../lib/calc/rates'
 import { parseItemsCsv, REQUIRED_COLUMNS } from '../lib/csv/parseItems'
 import { getRepo } from '../lib/repo'
@@ -155,7 +154,7 @@ export function ShipmentDetailPage() {
             </button>
             {reviewCount > 0 && (
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
-                Needs review: {reviewCount} (confidence &lt; {CONFIDENCE_THRESHOLD})
+                Needs review: {reviewCount} (투표 불일치 또는 원장 미등재)
               </span>
             )}
             <span className="ml-auto text-[11px] text-slate-400">
@@ -237,6 +236,24 @@ export function ShipmentDetailPage() {
                     {expanded === it.id && (
                       <tr>
                         <td colSpan={9} className="bg-slate-50 px-4 py-3">
+                          {it.classification_consensus && (
+                            <p
+                              className={`mb-3 rounded-md px-3 py-2 text-xs ${
+                                it.classification_consensus.status === 'auto_confirmed'
+                                  ? 'bg-emerald-50 text-emerald-800'
+                                  : 'bg-amber-50 text-amber-800'
+                              }`}
+                            >
+                              <b>판정:</b> {it.classification_consensus.reason}
+                              {' · '}
+                              <span className="font-mono">
+                                votes [{it.classification_consensus.votes.map((v) => (v ? formatHts(v) : '—')).join(', ')}]
+                              </span>
+                              {!it.classification_consensus.in_ledger && it.classification_consensus.code && (
+                                <> · 원장에 base MFN 없음</>
+                              )}
+                            </p>
+                          )}
                           <CandidatePicker item={it} onConfirm={confirmCandidate} />
                         </td>
                       </tr>
@@ -274,12 +291,12 @@ function CandidatePicker({
               className="flex w-full items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-left hover:border-indigo-400"
             >
               <span className="font-mono font-medium">{formatHts(c.hts_code)}</span>
+              {/* confidence 는 판정에서 빠지고 참고 표기로만 남는다 (v2) */}
               <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                  c.confidence >= CONFIDENCE_THRESHOLD ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'
-                }`}
+                className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500"
+                title="모델 자기평가 — 자동확정 판정에는 쓰이지 않음"
               >
-                {(c.confidence * 100).toFixed(0)}%
+                {(c.confidence * 100).toFixed(0)}% (참고)
               </span>
               <span className="flex-1 text-slate-500">{c.rationale}</span>
               <span className="text-indigo-600">Use this →</span>

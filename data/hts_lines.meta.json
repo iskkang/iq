@@ -1,0 +1,10 @@
+{
+  "source": "https://hts.usitc.gov/reststop/exportList (USITC 공식 export)",
+  "fetched_chapters": 96,
+  "failed_chapters": [],
+  "line_count": 19831,
+  "heading_count": 1227,
+  "ad_valorem_count": 17633,
+  "non_ad_valorem_count": 2198,
+  "note": "종량세·복합세 라인은 adValorem=null — MVP 는 종가세만 지원 (README 주의사항)"
+}

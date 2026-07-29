@@ -3,7 +3,7 @@
  * 분류는 mock, rate 원장은 동봉 시드 사용.
  */
 import type { FeeSettings, RateRow } from '../calc/types'
-import { CONFIDENCE_THRESHOLD } from '../classify/types'
+import { resolveStatus } from '../classify/status'
 import type { ClassifyBatchResult } from '../classify/types'
 import type { ParsedItemRow } from '../csv/parseItems'
 import { DEFAULT_FEES, SEED_RATES } from '../seedRates'
@@ -102,14 +102,15 @@ export function createDemoRepo(): Repo {
         for (const r of batch.results) {
           const it = items.get(r.item_id)
           if (!it || r.candidates.length === 0) continue
-          const top = r.candidates[0]
-          const confident = top.confidence >= CONFIDENCE_THRESHOLD
+          // 판정은 consensus 가 한다 (k=3 만장일치 + 원장 실존). confidence 는 참고 표기.
+          const status = resolveStatus(r)
           items.set(it.id, {
             ...it,
             candidates: r.candidates,
-            hts_final: top.hts_code, // 저신뢰면 잠정값 (§5: 리포트에 잠정 표시)
+            hts_final: r.consensus?.code ?? r.candidates[0].hts_code, // 미확정이면 잠정값 (§5)
             hts_source: 'llm',
-            classification_status: confident ? 'auto_confirmed' : 'needs_review',
+            classification_status: status,
+            classification_consensus: r.consensus ?? null,
           })
         }
       }

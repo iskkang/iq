@@ -4,7 +4,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { FeeSettings, RateRow } from '../calc/types'
-import { CONFIDENCE_THRESHOLD } from '../classify/types'
+import { resolveStatus } from '../classify/status'
 import type { ClassifyBatchResult } from '../classify/types'
 import type { ParsedItemRow } from '../csv/parseItems'
 import { DEFAULT_FEES } from '../seedRates'
@@ -140,17 +140,24 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
       for (const batch of batches) {
         for (const r of batch.results) {
           if (r.candidates.length === 0) continue
-          const top = r.candidates[0]
-          const confident = top.confidence >= CONFIDENCE_THRESHOLD
+          const status = resolveStatus(r)
 
-          // 분류 이력 (§5: 모델·프롬프트 버전 포함)
+          // 분류 이력 (§5: 모델·프롬프트 버전 포함 — 클레임 대응용)
           const { error: runErr } = await supabase.from('classification_runs').insert({
             item_id: r.item_id,
             workspace_id: ws,
             model: batch.meta.model,
             prompt_version: batch.meta.prompt_version,
             input: { item_id: r.item_id },
-            raw_output: JSON.parse(JSON.stringify({ candidates: r.candidates })),
+            raw_output: JSON.parse(
+              JSON.stringify({
+                candidates: r.candidates,
+                attributes: r.attributes ?? null,
+                headings: r.headings ?? [],
+                consensus: r.consensus ?? null,
+                cached: r.cached ?? false,
+              }),
+            ),
           })
           throwIf(runErr, 'Failed to save classification run')
 
@@ -169,13 +176,14 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
           )
           throwIf(candErr, 'Failed to save candidates')
 
-          // 상태 전이 (§1-3: 저신뢰는 자동 확정 금지 → needs_review, 잠정값만 기록)
+          // 상태 전이 (§1-3: 자동 확정은 k=3 만장일치 + 원장 실존일 때만)
           const { error: updErr } = await supabase
             .from('items')
             .update({
-              hts_final: top.hts_code,
+              hts_final: r.consensus?.code ?? r.candidates[0].hts_code,
               hts_source: 'llm',
-              classification_status: confident ? 'auto_confirmed' : 'needs_review',
+              classification_status: status,
+              classification_consensus: r.consensus ?? null,
             })
             .eq('id', r.item_id)
           throwIf(updErr, 'Failed to update item status')

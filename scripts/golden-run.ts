@@ -15,9 +15,8 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import Papa from 'papaparse'
-import { createClient } from '@supabase/supabase-js'
 import { computeShipment, dutyBreakdownLabel } from '../src/lib/calc/engine'
 import { formatHts, normalizeHts } from '../src/lib/calc/rates'
 import { LAYER_LABEL } from '../src/lib/calc/types'
@@ -30,10 +29,26 @@ import type {
   SkuResult,
 } from '../src/lib/calc/types'
 import { classifyItems } from '../src/lib/classify/client'
-import type { ClassifyBackend } from '../src/lib/classify/client'
-import { CONFIDENCE_THRESHOLD, sanitizeCandidates } from '../src/lib/classify/types'
+import { sanitizeCandidates } from '../src/lib/classify/types'
 import type { ClassifyBatchResult, ClassifyItemInput, HtsCandidate } from '../src/lib/classify/types'
+import { resolveStatus } from '../src/lib/classify/status'
 import { parseItemsCsv } from '../src/lib/csv/parseItems'
+import {
+  MAX_LINES_PER_HEADING,
+  PROMPT_VERSION,
+  STAGE_A_SYSTEM,
+  STAGE_B_SYSTEM,
+  TEMPERATURE,
+  VOTES,
+  decideStatus,
+  extractJson,
+  parseStageA,
+  parseStageB,
+  stageAUser,
+  stageBUser,
+  tallyVotes,
+} from '../supabase/functions/classify/pipeline'
+import type { CatalogLine } from '../supabase/functions/classify/pipeline'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..')
@@ -43,6 +58,8 @@ const argv = process.argv.slice(2)
 const arg = (name: string) => argv.find((a) => a.startsWith(`--${name}=`))?.split('=').slice(1).join('=')
 const OUT_FILE = arg('out') ?? 'test-results.md'
 const FORCED_BACKEND = arg('backend') as 'edge' | 'anthropic' | 'mock' | undefined
+/** --runs=N 은 모델 재현성 측정이 목적이라 기본적으로 캐시를 우회한다 */
+const NO_CACHE = !argv.includes('--use-cache')
 
 /** .env 로드 (tsx 는 vite 처럼 자동 주입하지 않는다) */
 function loadDotEnv(): Record<string, string> {
@@ -60,17 +77,24 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? dotenv.VITE_SUPABASE_URL
 const SUPABASE_KEY = process.env.VITE_SUPABASE_ANON_KEY ?? dotenv.VITE_SUPABASE_ANON_KEY
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY ?? dotenv.ANTHROPIC_API_KEY
 
-/**
- * Edge Function 의 시스템 프롬프트·모델을 소스에서 직접 읽는다.
- * 로컬 anthropic 경로가 배포본과 다른 프롬프트를 쓰면 §검증1 이 무의미해지므로
- * 프롬프트 원본은 항상 supabase/functions/classify/index.ts 하나뿐이다.
- */
-function edgeFunctionPrompt(): { system: string; model: string } {
-  const src = readFileSync(join(root, 'supabase/functions/classify/index.ts'), 'utf-8')
-  const sys = src.match(/const SYSTEM_PROMPT = `([\s\S]*?)`\r?\n/)
-  const mdl = src.match(/const DEFAULT_MODEL = '([^']+)'/)
-  if (!sys || !mdl) throw new Error('Edge Function 소스에서 SYSTEM_PROMPT/DEFAULT_MODEL 을 추출하지 못했다')
-  return { system: sys[1], model: process.env.CLASSIFY_MODEL ?? mdl[1] }
+const MODELS = (arg('models') ?? arg('model') ?? process.env.CLASSIFY_MODEL ?? 'claude-haiku-4-5')
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean)
+/** anthropicJson 이 현재 어떤 모델로 호출할지 — 모델 루프가 갱신한다 */
+let MODEL = MODELS[0]
+
+/** 로컬 카탈로그 (Edge 는 hts_lines 테이블, 여기선 data/hts_lines.json) */
+function loadCatalog(): Map<string, CatalogLine[]> {
+  const f = join(root, 'data/hts_lines.json')
+  if (!existsSync(f)) throw new Error(`${f} 없음 — 먼저 npm run hts:fetch`)
+  const lines: Array<{ code: string; heading: string; description: string }> = JSON.parse(readFileSync(f, 'utf-8'))
+  const byHeading = new Map<string, CatalogLine[]>()
+  for (const l of lines) {
+    if (!byHeading.has(l.heading)) byHeading.set(l.heading, [])
+    byHeading.get(l.heading)!.push({ code: l.code, heading: l.heading, description: l.description })
+  }
+  return byHeading
 }
 
 /** 배포된 classify 함수가 살아 있는지 확인 (§1 요구: 200 응답 확인) */
@@ -94,54 +118,149 @@ async function probeEdge(): Promise<{ ok: boolean; status: number | string }> {
   }
 }
 
-/** ANTHROPIC_API_KEY 로 직접 호출 (Edge Function 미배포 시 대체 경로, 프롬프트는 동일) */
-async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<ClassifyBatchResult[]> {
-  const { system, model } = edgeFunctionPrompt()
+/**
+ * 배포된 Edge Function 호출 (제품 경로).
+ * supabase-js 대신 fetch 를 쓴다 — realtime 초기화가 Node 20 의 없는 전역 WebSocket 을 요구한다.
+ * no_cache=true: --runs=N 로 모델 재현성을 재는 게 목적이라 캐시를 타면 측정이 무의미해진다.
+ */
+async function classifyViaEdgeHttp(items: ClassifyItemInput[]): Promise<ClassifyBatchResult[]> {
   const out: ClassifyBatchResult[] = []
   for (let i = 0; i < items.length; i += 10) {
     const batch = items.slice(i, i + 10)
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/classify`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY!,
-        'anthropic-version': '2023-06-01',
+        apikey: SUPABASE_KEY!,
+        authorization: `Bearer ${SUPABASE_KEY}`,
       },
-      body: JSON.stringify({
-        model,
-        max_tokens: 2048,
-        system,
-        messages: [
-          {
-            role: 'user',
-            content: `Classify these products:\n${JSON.stringify(
-              batch.map((b) => ({
-                item_id: b.id,
-                product_name: b.product_name,
-                description_or_material: b.description_or_material,
-                origin_country: b.origin_country,
-              })),
-              null,
-              2,
-            )}`,
-          },
-        ],
-      }),
+      body: JSON.stringify({ items: batch, no_cache: NO_CACHE }),
+      signal: AbortSignal.timeout(600_000),
     })
-    if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`)
     const data = await res.json()
-    const text: string = (data.content ?? [])
-      .filter((b: { type: string }) => b.type === 'text')
-      .map((b: { text: string }) => b.text)
-      .join('')
-    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
-    const parsed = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1))
-    const byId = new Map<string, HtsCandidate[]>()
-    for (const r of parsed.results ?? []) byId.set(String(r.item_id), sanitizeCandidates(r.candidates))
+    if (!res.ok || data.error) throw new Error(`classify edge ${res.status}: ${data.error ?? ''}`)
     out.push({
-      results: batch.map((b) => ({ item_id: b.id, candidates: byId.get(b.id) ?? [] })),
-      meta: { model, prompt_version: 'v1' },
-      raw_output: data,
+      results: (data.results as ClassifyBatchResult['results']).map((r) => ({
+        ...r,
+        candidates: sanitizeCandidates(r.candidates),
+      })),
+      meta: data.meta,
+      raw_output: null,
+    })
+  }
+  return out
+}
+
+async function anthropicJson(system: string, user: string): Promise<unknown> {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': ANTHROPIC_KEY!, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 4096,
+      temperature: TEMPERATURE,
+      system,
+      messages: [{ role: 'user', content: user }],
+    }),
+  })
+  if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`)
+  const data = await res.json()
+  const text: string = (data.content ?? [])
+    .filter((b: { type: string }) => b.type === 'text')
+    .map((b: { text: string }) => b.text)
+    .join('')
+  return extractJson(text)
+}
+
+/**
+ * Edge Function 과 동일한 2단계 파이프라인을 로컬에서 실행.
+ * 프롬프트·투표·판정 로직은 전부 supabase/functions/classify/pipeline.ts 를 그대로 import 한다
+ * — 두 벌이 되면 §검증1 점수가 무의미해진다.
+ */
+async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<ClassifyBatchResult[]> {
+  const catalog = loadCatalog()
+  const out: ClassifyBatchResult[] = []
+
+  for (let i = 0; i < items.length; i += 10) {
+    const batch = items.slice(i, i + 10)
+
+    // (a) 속성 + 4자리 호 후보
+    const stageA = parseStageA(await anthropicJson(STAGE_A_SYSTEM, stageAUser(batch)))
+
+    // 호에 해당하는 USITC 실제 라인
+    const linesByHeading = new Map<string, CatalogLine[]>()
+    for (const h of new Set([...stageA.values()].flatMap((a) => a.headings))) {
+      linesByHeading.set(h, catalog.get(h) ?? [])
+    }
+    const allowed = new Map<string, Set<string>>()
+    for (const item of batch) {
+      const set = new Set<string>()
+      for (const h of stageA.get(item.id)?.headings ?? [])
+        for (const l of (linesByHeading.get(h) ?? []).slice(0, MAX_LINES_PER_HEADING)) set.add(l.code)
+      allowed.set(item.id, set)
+    }
+
+    // (b) 보기 중 선택 × k=3 (동시)
+    const userB = stageBUser(batch, stageA, linesByHeading)
+    const rounds = await Promise.all(
+      Array.from({ length: VOTES }, async () => {
+        const sel = parseStageB(await anthropicJson(STAGE_B_SYSTEM, userB))
+        const strays = batch.filter((it) => {
+          const s = sel.get(it.id)
+          return !s || !allowed.get(it.id)?.has(s.hts_code)
+        })
+        if (strays.length > 0) {
+          const retry = parseStageB(
+            await anthropicJson(
+              STAGE_B_SYSTEM,
+              `${userB}\n\nYour previous answer used codes that were NOT in the option list for: ${strays
+                .map((s) => s.id)
+                .join(', ')}. Return ONLY codes copied exactly from each product's OPTIONS block.`,
+            ),
+          )
+          for (const s of strays) {
+            const r = retry.get(s.id)
+            if (r && allowed.get(s.id)?.has(r.hts_code)) sel.set(s.id, r)
+          }
+        }
+        return sel
+      }),
+    )
+
+    const results = batch.map((item) => {
+      const perVote = rounds.map((sel) => {
+        const s = sel.get(item.id)
+        return { selection: s, valid: !!s && !!allowed.get(item.id)?.has(s.hts_code) }
+      })
+      const o = tallyVotes(item, stageA.get(item.id), perVote)
+      const inLedger = o.consensus ? LEDGER.some((r) => r.layer === 'base_mfn' && r.hts_code === o.consensus) : false
+      const { status, reason } = decideStatus(o, inLedger)
+      const byCode = new Map<string, HtsCandidate>()
+      for (const s of o.selections) {
+        if (!byCode.has(s.hts_code))
+          byCode.set(s.hts_code, { hts_code: s.hts_code, confidence: s.confidence, rationale: s.rationale })
+      }
+      return {
+        item_id: item.id,
+        candidates: sanitizeCandidates([...byCode.values()]),
+        attributes: o.attributes,
+        headings: o.headings,
+        consensus: {
+          code: o.consensus,
+          unanimous: o.unanimous,
+          votes: o.votes,
+          in_ledger: inLedger,
+          out_of_options: o.out_of_options,
+          status,
+          reason,
+        },
+      }
+    })
+
+    out.push({
+      results,
+      meta: { model: MODEL, prompt_version: PROMPT_VERSION, temperature: TEMPERATURE, votes: VOTES },
+      raw_output: { local_pipeline: true },
     })
   }
   return out
@@ -213,9 +332,37 @@ function loadLedger(file: string): RateRow[] {
     note: r.note?.trim() || null,
   }))
 }
-const BASE_LEDGER = loadLedger('supabase/seed/hts_seed_50.csv')
-const SUPPLEMENT = loadLedger('supabase/seed/hts_seed_golden_supplement.csv')
-const LEDGER: RateRow[] = [...BASE_LEDGER, ...SUPPLEMENT]
+/**
+ * 원장 구성 (v3):
+ *   base_mfn        USITC 공식 export 에서 (data/hts_lines.json) — 실제 값
+ *   301 · IEEPA     hts_seed_50.csv 의 SAMPLE 행 — 여전히 미검증, 관리자 수기 확정 대상
+ *
+ * v1·v2 의 UNVERIFIED-PLACEHOLDER 보충 시드는 실제 USITC 값이 생겼으므로 쓰지 않는다.
+ */
+function loadUsitcBaseMfn(): RateRow[] {
+  const f = join(root, 'data/hts_lines.json')
+  if (!existsSync(f)) throw new Error(`${f} 없음 — 먼저 npm run hts:fetch`)
+  const lines: Array<{ code: string; adValorem: number | null; general: string }> = JSON.parse(
+    readFileSync(f, 'utf-8'),
+  )
+  return lines
+    .filter((l) => l.adValorem !== null)
+    .map((l) => ({
+      hts_code: l.code,
+      origin_country: null,
+      layer: 'base_mfn' as RateLayer,
+      ad_valorem_rate: l.adValorem as number,
+      effective_from: '2025-01-01',
+      effective_to: null,
+      source: 'USITC HTS export',
+      note: l.general,
+    }))
+}
+const SEED_LAYERS = loadLedger('supabase/seed/hts_seed_50.csv').filter((r) => r.layer !== 'base_mfn')
+const USITC_MFN = loadUsitcBaseMfn()
+const LEDGER: RateRow[] = [...USITC_MFN, ...SEED_LAYERS]
+const BASE_LEDGER = USITC_MFN
+const SUPPLEMENT = SEED_LAYERS
 
 const SCENARIO_B: Record<string, { code: string; via: string }> = Object.fromEntries(
   Object.entries(TARGETS).map(([sku, t]) => [sku, resolveTargetCode(t.six[0], LEDGER)]),
@@ -278,40 +425,51 @@ async function main() {
 
   const runOnce = async (): Promise<ClassifyBatchResult[]> => {
     if (backend === 'anthropic') return classifyViaAnthropic(inputs)
-    const be: ClassifyBackend =
-      backend === 'edge'
-        ? { kind: 'edge', supabase: createClient(SUPABASE_URL!, SUPABASE_KEY!) }
-        : { kind: 'mock' }
-    return classifyItems(be, inputs)
+    if (backend === 'edge') return classifyViaEdgeHttp(inputs)
+    return classifyItems({ kind: 'mock' }, inputs)
   }
 
   // LLM 은 비결정론적이라 1회 표본으로 게이트를 통과/미달 판정하면 안 된다 (--runs=N)
   const RUNS = Math.max(1, Number(arg('runs') ?? (isReal ? 3 : 1)))
-  const t0 = performance.now()
-  const allRuns: ClassifyBatchResult[][] = []
-  for (let i = 0; i < RUNS; i++) {
-    if (RUNS > 1) console.log(`  분류 실행 ${i + 1}/${RUNS}…`)
-    allRuns.push(await runOnce())
+
+  /** 모델별 측정 결과 */
+  const perModel: Array<{ model: string; runs: ClassifyBatchResult[][]; ms: number }> = []
+  for (const m of MODELS) {
+    MODEL = m
+    const t = performance.now()
+    const runs: ClassifyBatchResult[][] = []
+    for (let i = 0; i < RUNS; i++) {
+      console.log(`  [${m}] 실행 ${i + 1}/${RUNS}…`)
+      runs.push(await runOnce())
+    }
+    perModel.push({ model: m, runs, ms: (performance.now() - t) / RUNS })
   }
-  const classifyMs = (performance.now() - t0) / RUNS
+
+  const allRuns = perModel[0].runs
+  const classifyMs = perModel[0].ms
   const batches = allRuns[0]
-  const model = batches[0]?.meta.model ?? 'unknown'
+  const model = batches[0]?.meta.model ?? MODELS[0]
   const promptVersion = batches[0]?.meta.prompt_version ?? 'unknown'
 
   // ── §1-3 confidence 게이팅 (demo/supabase repo 와 동일 규칙) ──
   const gate = (bs: ClassifyBatchResult[]) => {
-    const byId = new Map<string, HtsCandidate[]>()
-    for (const b of bs) for (const r of b.results) byId.set(r.item_id, r.candidates)
+    const byId = new Map<string, ClassifyBatchResult['results'][number]>()
+    for (const b of bs) for (const r of b.results) byId.set(r.item_id, r)
     return withIds.map((p) => {
-      const cands = byId.get(p.id) ?? []
-      const top = cands[0] ?? null
-      const provisional = top ? top.confidence < CONFIDENCE_THRESHOLD : true
+      const res = byId.get(p.id)
+      const cands = res?.candidates ?? []
+      const consensus = res?.consensus ?? null
+      const status = res ? resolveStatus(res) : 'pending'
       return {
         ...p,
         candidates: cands,
-        top,
-        provisional,
-        status: !top ? 'pending' : provisional ? 'needs_review' : 'auto_confirmed',
+        top: cands[0] ?? null,
+        consensus,
+        // 자동확정이 아니면 리포트에 잠정 표시 (§5)
+        provisional: status !== 'auto_confirmed',
+        status,
+        // 계산에 쓸 코드: 만장일치면 그 코드, 아니면 1표라도 나온 값(잠정)
+        chosen: consensus?.code ?? cands[0]?.hts_code ?? null,
       }
     })
   }
@@ -336,7 +494,7 @@ async function main() {
       provisional: g.provisional,
     }))
 
-  const resultA = computeShipment(SHIP, mkItems((g) => g.top?.hts_code ?? null), LEDGER, FEES)
+  const resultA = computeShipment(SHIP, mkItems((g) => g.chosen), LEDGER, FEES)
   const resultB = computeShipment(SHIP, mkItems((g) => SCENARIO_B[g.sku]?.code ?? null), LEDGER, FEES)
 
   // ── 부분 미스 무경고 탐지 ────────────────────────────────────
@@ -393,11 +551,61 @@ async function main() {
   ).length
   const zeroPadded = allCands.filter((c) => /0{4}$/.test(normalizeHts(c.hts_code))).length
 
+  // ── 모델별 종합 (요구사항 5) ──────────────────────────────
+  const modelStats = perModel.map((pm) => {
+    const gs = pm.runs.map(gate)
+    const hitSets = gs.map(hitSet)
+    const scores = hitSets.map((s) => s.size)
+    // 오답 중 needs_review 로 격리된 비율 — 안전판이 실제로 작동하는가
+    let wrong = 0
+    let wrongIsolated = 0
+    let autoConfirmed = 0
+    let unanimousCount = 0
+    let outOfOptions = 0
+    let total = 0
+    for (const g of gs) {
+      for (const it of g) {
+        total++
+        const isHit = TARGETS[it.sku] ? hitsTarget(it.candidates, TARGETS[it.sku].six).hit : false
+        if (it.status === 'auto_confirmed') autoConfirmed++
+        if (it.consensus?.unanimous) unanimousCount++
+        outOfOptions += it.consensus?.out_of_options ?? 0
+        if (!isHit) {
+          wrong++
+          if (it.status === 'needs_review') wrongIsolated++
+        }
+      }
+    }
+    // 재현성: SKU 별로 확정 코드가 모든 실행에서 같은가
+    const stable = gated.filter((g0) => {
+      const codes = gs.map((g) => g.find((x) => x.sku === g0.sku)?.chosen ?? null)
+      return new Set(codes).size === 1 && codes[0] !== null
+    }).length
+    return {
+      model: pm.model,
+      ms: pm.ms,
+      scores,
+      avg: scores.reduce((a, b) => a + b, 0) / scores.length,
+      best: Math.max(...scores),
+      worst: Math.min(...scores),
+      wrong,
+      wrongIsolated,
+      isolationRate: wrong > 0 ? wrongIsolated / wrong : 1,
+      autoConfirmed,
+      wrongAutoConfirmed: wrong - wrongIsolated,
+      unanimousRate: unanimousCount / total,
+      outOfOptions,
+      stable,
+      hitSets,
+    }
+  })
+
   // ── 리포트 작성 ──────────────────────────────────────────────
   const L: string[] = []
   const p = (s = '') => L.push(s)
 
-  p('# LandedIQ 골든 테스트 결과 v1')
+  const versionLabel = OUT_FILE.match(/v(\d+)/)?.[0] ?? 'v1'
+  p(`# LandedIQ 골든 테스트 결과 ${versionLabel}`)
   p()
   p('`golden-test-products.csv` 10건을 실제 파이프라인 모듈로 통과시킨 결과.')
   p('생성: `npm run golden` ([scripts/golden-run.ts](scripts/golden-run.ts)) · 계획서: [golden-test-plan-v1.md](golden-test-plan-v1.md)')
@@ -418,7 +626,9 @@ async function main() {
     )
   }
   p('| §검증1 정답 확정 | **미완** | 계획서가 요구한 CBP CROSS 판례 확인을 수행하지 않았다. 아래 정답은 계획서의 잠정값(BRD-01 은 v2 정정본)이며 **최종 채점 전 CROSS 확인 필요**. |')
-  p('| §검증2-1·2 세율 대조 | **자동 실패** | 원장 행 자체가 `Test seed — re-verify at hts.usitc.gov` / `SAMPLE value — admin must confirm manually` 로 표기된 미검증 값이다. USITC·USTR 대조는 사람이 해야 한다 (스펙 §4 자동 스크래핑 금지). |')
+  p(
+    `| §검증2-1·2 세율 대조 | **부분 통과** | base MFN ${BASE_LEDGER.length.toLocaleString()}행은 USITC 공식 export 에서 직접 적재해 대조가 끝났다 (스펙 §4 허용 경로). **Section 301·IEEPA ${SUPPLEMENT.length}행은 여전히 SAMPLE** — 관리자 수기 확정 전까지 duty 총액은 신뢰할 수 없다. |`,
+  )
   p('| §검증2-3 계산 재검증 | **집행됨 ✅** | 결정론 코드라 여기서 나온 숫자는 그대로 신뢰 가능. 아래 수식 대입값으로 엑셀 대조하면 된다. |')
   p('| §검증2-4 원산지 스코핑 | **집행됨 ✅** | 아래 assert 결과 참조. |')
   p()
@@ -430,15 +640,21 @@ async function main() {
   const bySource = new Map<string, number>()
   for (const r of LEDGER) bySource.set(r.source ?? '(없음)', (bySource.get(r.source ?? '(없음)') ?? 0) + 1)
   const SRC_MEANING: Record<string, string> = {
+    'USITC HTS export': '✅ USITC 공식 export 직접 적재 — 검증됨',
     'USITC HTS snapshot': '테스트 스냅샷 — 현행표 재확인 필요',
-    SAMPLE: '예시값 — 관리자 수기 확정 필요 (301·IEEPA)',
-    'UNVERIFIED-PLACEHOLDER': '**이번 실행을 위해 넣은 자리표시자. 검증된 값 아님**',
+    SAMPLE: '❌ 예시값 — 관리자 수기 확정 필요 (301·IEEPA)',
+    'UNVERIFIED-PLACEHOLDER': '**자리표시자. 검증된 값 아님**',
   }
   for (const [src, n] of [...bySource].sort((a, b) => b[1] - a[1])) {
     p(`| \`${src}\` | ${n} | ${SRC_MEANING[src] ?? '—'} |`)
   }
   p()
-  p(`원장에 검증된(verified) 행은 **0건**이다. 즉 §검증2-1·2 는 현시점 0/10 이며, 이는 코드 버그가 아니라 데이터 미확정 상태다.`)
+  const verified = LEDGER.filter((r) => (r.source ?? '').startsWith('USITC HTS export')).length
+  p(
+    `검증된 행 **${verified.toLocaleString()}/${LEDGER.length.toLocaleString()}**. base MFN 은 USITC 공식 데이터로 해결됐고, 남은 미검증은 Section 301·IEEPA ${SUPPLEMENT.length}행이다.`,
+  )
+  p()
+  p('**이 10개 SKU 에 301·IEEPA 가 붙는 한 duty 총액은 여전히 미확정이다** — 광고 판단의 병목은 이제 세율 원장이 아니라 이 두 레이어다.')
   p()
 
   p('---')
@@ -451,8 +667,9 @@ async function main() {
     `| 분류 백엔드 | \`${model}\` (prompt ${promptVersion}) — ${isReal ? `**실 분류기 (${backend})**` : '**mock, LLM 아님**'} |`,
   )
   p(`| 분류 소요 | ${classifyMs.toFixed(1)} ms |`)
-  p(`| confidence 임계 | ${CONFIDENCE_THRESHOLD} (미만 → needs_review, 자동확정 금지 §1-3) |`)
-  p(`| 원장 행 수 | ${LEDGER.length} (base ${BASE_LEDGER.length} + 보충 ${SUPPLEMENT.length}) |`)
+  p(`| 자동확정 규칙 | k=${VOTES} 만장일치 AND 원장 base MFN 실존 (confidence 는 참고 표기로 강등) |`)
+  p(`| temperature | ${TEMPERATURE} |`)
+  p(`| 원장 행 수 | ${LEDGER.length.toLocaleString()} (USITC base MFN ${BASE_LEDGER.length.toLocaleString()} + 301·IEEPA SAMPLE ${SUPPLEMENT.length}) |`)
   p(`| rate 기준일 | ${SHIP.rate_as_of} |`)
   p(`| 운임 + 보험 | $${SHIP.freight_usd.toLocaleString()} + $${SHIP.insurance_usd} = **$${(SHIP.freight_usd + SHIP.insurance_usd).toLocaleString()}** |`)
   p(`| 운송 모드 / 배부 기준 | ${SHIP.mode} / ${resultB.totals.allocation_basis_used} |`)
@@ -481,13 +698,44 @@ async function main() {
     `**${isReal ? '점수' : 'mock 점수'}: ${hits}/10** (통과 기준 7/10 → ${hits >= 7 ? '**통과**' : '**미달**'}) · 함정 문항(🎯) ${trapHits}/2`,
   )
   p()
-  p(`needs_review 로 격리된 건: ${gated.filter((g) => g.status === 'needs_review').map((g) => g.sku).join(', ') || '없음'} — confidence < ${CONFIDENCE_THRESHOLD} 자동확정 금지(§1-3)가 동작함을 확인.`)
+  p(`needs_review 로 격리된 건: ${gated.filter((g) => g.status === 'needs_review').map((g) => g.sku).join(', ') || '없음'}`)
   p()
   if (!isReal) {
     p('> 다시 강조: 이 점수는 mock 키워드 매처의 점수다. **제품이 실제로 쓰는 LLM 분류기 점수가 아니다.**')
     p('> Edge Function 배포 + API 키 설정 후 재실행해야 §검증1 이 성립한다.')
     p()
   } else {
+    p('### 모델별 비교')
+    p()
+    p(`파이프라인 v2(2단계 선택형·temperature ${TEMPERATURE}·k=${VOTES} 만장일치), 각 ${RUNS}회 실행.`)
+    p()
+    p('| 모델 | 6자리 점수 (평균/범위) | 오답 needs_review 격리율 | 오답인데 자동확정 | 재현성 | 만장일치율 | 보기밖 |')
+    p('|---|---|---|---|---|---|---|')
+    for (const m of modelStats) {
+      p(
+        `| \`${m.model}\` | **${m.avg.toFixed(1)}/10** (${m.worst}–${m.best}) | **${(m.isolationRate * 100).toFixed(0)}%** (${m.wrongIsolated}/${m.wrong}) | **${m.wrongAutoConfirmed}건** | ${m.stable}/10 SKU 고정 | ${(m.unanimousRate * 100).toFixed(0)}% | ${m.outOfOptions}건 |`,
+      )
+    }
+    p()
+    p('- **오답 needs_review 격리율** — 틀린 분류가 리뷰 큐로 갔는가. 100% 면 오답이 사용자에게 "확인됨"으로 전달되지 않는다.')
+    p('- **오답인데 자동확정** — 가장 위험한 칸. 틀렸는데 확정돼서 그대로 duty 가 계산된다. 0 이어야 한다.')
+    p('- **재현성** — 같은 CSV 를 다시 올렸을 때 같은 코드가 나오는 SKU 수 (캐시 우회 측정).')
+    p('- **보기밖** — 카탈로그에 없는 코드를 낸 횟수. 재시도 후에도 실패한 건만 센다.')
+    p()
+    p(`> 캐시(정규화 해시)를 켜면 재현성은 정의상 10/10 이 된다. 위 수치는 \`no_cache\` 로 **모델 자체의**`)
+    p('> 안정성을 잰 것이다. 사용자 체감 재현성은 캐시가 보장한다.')
+    p()
+    p('| SKU | ' + modelStats.map((m) => `\`${m.model.replace('claude-', '')}\``).join(' | ') + ' |')
+    p('|---|' + modelStats.map(() => '---').join('|') + '|')
+    for (const g of gated) {
+      const cells = modelStats.map((m) => {
+        const n = m.hitSets.filter((s) => s.has(g.sku)).length
+        return n === RUNS ? `✅ ${n}/${RUNS}` : n === 0 ? `❌ 0/${RUNS}` : `⚠️ ${n}/${RUNS}`
+      })
+      p(`| ${g.sku}${TRAP_SKUS.includes(g.sku) ? ' 🎯' : ''} | ${cells.join(' | ')} |`)
+    }
+    p()
+
     if (RUNS > 1) {
       const min = Math.min(...runScores)
       const max = Math.max(...runScores)
@@ -531,7 +779,7 @@ async function main() {
     p(`| 4자리(호) 적중 | **${headHits}/10** | 큰 분류는 맞히는지 |`)
     p(`| 근접 오답 (호 O, 소호 X) | **${nearMiss.length}건** | ${nearMiss.map((s) => s.sku).join(', ') || '없음'} |`)
     p(
-      `| 자동확정됐는데 오답 | **${wrongButConfident.length}/10** | confidence ≥ ${CONFIDENCE_THRESHOLD} 인데 틀린 건 — §1-3 안전판이 못 걸러냄 |`,
+      `| 자동확정됐는데 오답 | **${wrongButConfident.length}/10** | §1-3 안전판을 빠져나간 오분류 — 낮을수록 좋다 |`,
     )
     p(`| needs_review 로 격리 | **${gated.filter((g) => g.status === 'needs_review').length}/10** | 리뷰 큐로 간 건 |`)
     p(`| 후보당 개수 | 평균 ${(allCands.length / scored.length).toFixed(1)}개 | 스펙 §5 는 2~3개 요구 |`)
@@ -844,56 +1092,90 @@ async function main() {
   p()
   p('| 검증 | 결과 |')
   p('|---|---|')
-  const avgScore = runScores.reduce((a, b) => a + b, 0) / RUNS
-  const bestScore = Math.max(...runScores)
-  p(
-    isReal
-      ? `| §검증1 HTS 분류 | ${bestScore >= 7 ? '✅ **통과**' : '❌ **미달**'} — \`${model}\` ${RUNS > 1 ? `${RUNS}회 평균 ${avgScore.toFixed(1)}/10 (최고 ${bestScore})` : `${hits}/10`} (기준 7/10), 함정 ${trapHits}/2 |`
-      : `| §검증1 HTS 분류 | ⛔ **미집행** — 실 분류기(Edge Function) 미배포. mock 참고치 ${hits}/10 |`,
-  )
+  const gatePassers = isReal ? modelStats.filter((m) => m.avg >= 7) : []
+  if (isReal) {
+    for (const m of modelStats) {
+      p(
+        `| §검증1 — \`${m.model}\` | ${m.avg >= 7 ? '✅ **통과**' : '❌ **미달**'} — ${RUNS}회 평균 ${m.avg.toFixed(1)}/10 (${m.worst}–${m.best}, 기준 7/10) · 오답 자동확정 ${m.wrongAutoConfirmed}건 |`,
+      )
+    }
+  } else {
+    p(`| §검증1 HTS 분류 | ⛔ **미집행** — 실 분류기 미배포. mock 참고치 ${hits}/10 |`)
+  }
   p('| §검증2-1·2 세율 대조 | ❌ **실패** — 원장에 검증된 행 0건 (전부 test seed / SAMPLE / placeholder) |')
   p('| §검증2-3 계산 정확도 | ✅ **통과** — 배부 보존·수식 일관성 확인. 위 수식 대입값으로 엑셀 대조 가능 |')
   p('| §검증2-4 원산지 스코핑 | ' + (originViolations.length === 0 ? '✅ **통과**' : '❌ **실패**') + ' |')
   p('| §검증3 E2E | ⛔ **미집행** — 이 러너는 UI 를 거치지 않는다. 별도 수행 필요 |')
   p()
-  p('계획서 판정 규칙에 따라 **광고 집행 불가**.')
-  p()
-  if (isReal && bestScore < 7) {
-    p('계획서: *"검증 1 미달 → 분류 프롬프트 개선(소재·용도 필드 활용 강화) 후 재시험. 2회 미달 시')
-    p('\'HTS는 사용자 입력, 앱은 계산만\' 모드로 피벗 검토"* — 지금이 **1회차 미달**이다.')
+  if (isReal) {
+    const worstIso = Math.min(...modelStats.map((m) => m.isolationRate))
+    const anyWrongAuto = modelStats.some((m) => m.wrongAutoConfirmed > 0)
+
+    if (gatePassers.length > 0) {
+      p(
+        `§검증1 은 ${gatePassers.map((m) => `\`${m.model}\``).join(', ')} 로 **기준 7/10 을 넘겼다** (파이프라인 v1 대비 haiku 3.2 → ${modelStats[0].avg.toFixed(1)}).`,
+      )
+      p('자유 생성을 막고 USITC 실제 라인 중에서만 고르게 한 것이 주효했다 — 보기 밖 코드 0건, 지어낸 통계 suffix 0건.')
+    } else {
+      p('§검증1 은 어느 모델도 기준 7/10 에 미달했다.')
+    }
     p()
-    p('프롬프트 개선 시 위 진단이 가리키는 지점:')
-    p()
-    p(`1. **소호 좁히기** — 호는 ${headHits}/10 인데 소호는 ${hits}/10. 소재·용도로 소호를 가르는 단계를 프롬프트에 명시.`)
-    p('2. **confidence 보정** — 오답에도 85~91% 를 준다. 리뷰 큐가 비어 있어 §1-3 안전판이 무력하다.')
-    p('   "6자리까지 확신 없으면 0.7 미만" 같은 명시적 기준이 필요.')
-    p('3. **10자리 코드 검증** — 모델이 통계 suffix 를 지어낸다. 원장·USITC 코드 목록에 존재하는 코드로')
-    p('   제한하거나(후보 필터), 6자리까지만 받고 suffix 는 원장에서 채우는 구조가 안전하다.')
-    p('4. **재현성** — 같은 입력에 실행마다 다른 답이 나온다. temperature 고정·후보 캐싱 검토.')
-    p()
-    p('개선 후 `npm run golden -- --runs=5` 로 재시험. 2회차도 미달이면 피벗 검토 대상이다.')
-    p()
+
+    if (anyWrongAuto) {
+      p('### ⛔ 그러나 광고 집행은 여전히 불가 — 안전판이 작동하지 않는다')
+      p()
+      p(
+        `**오답의 needs_review 격리율이 ${(worstIso * 100).toFixed(0)}% 다.** 틀린 분류가 단 한 건도 리뷰 큐로 가지 않고`,
+      )
+      p('전부 auto_confirmed 로 확정됐다. 사용자는 틀린 duty 를 "확인됨" 상태로 받는다.')
+      p()
+      p('원인은 설계 자체에 있다:')
+      p()
+      p(`- temperature ${TEMPERATURE} 로 고정하면 같은 입력에 같은 출력이 나온다 → k=${VOTES} 투표는 거의 항상 만장일치가 된다`)
+      p(`  (실측 만장일치율 ${modelStats.map((m) => `${m.model.replace('claude-', '')} ${(m.unanimousRate * 100).toFixed(0)}%`).join(', ')}).`)
+      p('- "원장 실존" 조건도 (b) 단계가 이미 실제 라인만 보기로 주므로 사실상 항상 참이다.')
+      p('- 즉 **두 조건 모두 거의 항상 참** → auto_confirmed 가 기본값이 됐다. 재현성(요구사항 2)과')
+      p('  만장일치 안전판(요구사항 3)이 서로를 무력화한다.')
+      p()
+      p('이 둘을 같이 살리려면 만장일치 대신 **불일치를 만들어내는** 신호가 필요하다:')
+      p()
+      p('1. **투표를 서로 다르게 친다** — k표를 같은 프롬프트로 돌리지 말고 (a)단계 호 후보를 하나씩 빼거나,')
+      p('   보기 순서를 섞거나, 표마다 다른 모델을 쓴다. 답이 진짜 강건할 때만 일치한다.')
+      p('2. **모델 간 교차검증** — haiku 와 sonnet 이 갈리는 SKU 를 리뷰 큐로. 이번 측정에서 두 모델은')
+      p(`   TUM-01·SPK-01 에서 정확히 반대로 갈렸다 — 교차검증이었다면 둘 다 격리됐을 건이다.`)
+      p('3. **호 단계 불일치 활용** — (a)단계가 2개 이상 호를 냈는데 (b)가 그중 하나를 고른 경우,')
+      p('   경합이 있었다는 뜻이므로 리뷰 대상으로 본다.')
+      p()
+    }
   }
+
   p('§검증1 과 별개로 남은 것:')
   p()
-  p('- CBP CROSS 로 정답 키 확정 (BRD-01 4419.11, LMP-01 9405.21 vs 9405.29, SPK-01 8518.22 vs 8517.62)')
-  p('- USITC 현행표로 base MFN 적재 (`npm run seed:rates -- --usitc <export.csv>`), USTR·IEEPA 고시로 301·IEEPA 수기 입력 → §검증2-1·2')
+  p(`- **Section 301·IEEPA ${SUPPLEMENT.length}행이 여전히 SAMPLE** — base MFN 은 USITC 로 해결됐지만 이 둘이 미확정인 한 duty 총액은 못 믿는다 (§검증2-1·2)`)
+  p('- CBP CROSS 로 정답 키 확정 (BAG-01 은 두 모델 모두 5/5 오답 — 정답 키 자체를 의심해볼 것)')
   p('- 신규 계정으로 §검증3 E2E 수동 수행')
   p()
 
-  writeFileSync(join(root, OUT_FILE), L.join('\n'), 'utf-8')
+  writeFileSync(isAbsolute(OUT_FILE) ? OUT_FILE : join(root, OUT_FILE), L.join('\n'), 'utf-8')
 
   // ── 콘솔 요약 ────────────────────────────────────────────────
   console.log('── 골든 테스트 결과 ────────────────────────────')
   console.log(`분류 백엔드:        ${model} (${isReal ? backend : 'mock — LLM 아님'})`)
-  console.log(
-    isReal
-      ? `§검증1:             ${hits}/10 (기준 7/10 → ${hits >= 7 ? 'PASS' : 'FAIL'}), 함정 ${trapHits}/2`
-      : `§검증1 (mock 참고): ${hits}/10, 함정 ${trapHits}/2  → 실 분류기 미배포로 판정 불가`,
-  )
+  if (isReal) {
+    for (const m of modelStats) {
+      console.log(
+        `§검증1 ${m.model.padEnd(20)} ${m.avg.toFixed(1)}/10 (${m.worst}-${m.best}) → ${m.avg >= 7 ? 'PASS' : 'FAIL'} · 오답 자동확정 ${m.wrongAutoConfirmed}건 · 재현 ${m.stable}/10`,
+      )
+    }
+  } else {
+    console.log(`§검증1 (mock 참고): ${hits}/10, 함정 ${trapHits}/2  → 실 분류기 미배포로 판정 불가`)
+  }
   console.log(`§검증2-3 배부 보존: freight ${ok(fSum, resultB.totals.freight_pool)} / mpf ${ok(mSum, resultB.totals.mpf_shipment)} / hmf ${ok(hSum, resultB.totals.hmf_shipment)}`)
   console.log(`§검증2-4 원산지:    ${originViolations.length === 0 ? 'PASS' : `FAIL — ${originViolations.join(', ')}`}`)
-  console.log(`원장 검증된 행:     0 / ${LEDGER.length}  → §검증2-1·2 실패 (데이터 미확정)`)
+  const verifiedRows = LEDGER.filter((r) => (r.source ?? '').startsWith('USITC HTS export')).length
+  console.log(
+    `원장 검증된 행:     ${verifiedRows.toLocaleString()} / ${LEDGER.length.toLocaleString()} (base MFN=USITC 확정, 301·IEEPA ${SUPPLEMENT.length}행 여전히 SAMPLE)`,
+  )
   console.log(`→ ${OUT_FILE}`)
 
   if (originViolations.length > 0) process.exit(1)

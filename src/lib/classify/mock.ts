@@ -2,7 +2,7 @@
  * Mock 분류기 — API 키 없는 데모/개발/벤치마크용. 결정론적.
  * 실 서비스에서는 Supabase Edge Function(classify)이 Anthropic API를 호출한다.
  */
-import type { ClassifyBatchResult, ClassifyItemInput, HtsCandidate } from './types'
+import type { ClassifyBatchResult, ClassifyConsensus, ClassifyItemInput, HtsCandidate } from './types'
 
 /** 미매칭 상품용 후보 풀 (시드 원장의 10자리 코드 일부 — mock 전용, rate 조회와 무관) */
 const DEFAULT_POOL = [
@@ -82,12 +82,28 @@ export function mockClassifyBatch(items: ClassifyItemInput[]): ClassifyBatchResu
           ? `[MOCK] Top candidate based on '${item.product_name || item.description_or_material}' text match`
           : `[MOCK] Alternative candidate ${rank + 1}`,
     }))
-    return { item_id: item.id, candidates }
+
+    // v2 판정 형태를 맞춘다. mock 은 결정론이라 k=3 은 항상 만장일치이므로
+    // 키워드 매칭 성공(고신뢰) 여부를 만장일치 대용으로 쓴다.
+    // in_ledger 는 mock 이 원장을 못 보므로 true 로 두고, 실제 판정은
+    // 원장을 볼 수 있는 edge 백엔드에서만 의미를 갖는다.
+    const top = candidates[0].hts_code
+    const unanimous = !!matched
+    const consensus: ClassifyConsensus = {
+      code: unanimous ? top : null,
+      unanimous,
+      votes: [unanimous ? top : null, unanimous ? top : null, unanimous ? top : null],
+      in_ledger: true,
+      out_of_options: 0,
+      status: unanimous ? 'auto_confirmed' : 'needs_review',
+      reason: unanimous ? '[MOCK] 키워드 매칭 — 만장일치 취급' : '[MOCK] 키워드 미매칭 — 리뷰 필요',
+    }
+    return { item_id: item.id, candidates, attributes: null, headings: [top.slice(0, 4)], consensus }
   })
 
   return {
     results,
-    meta: { model: 'mock-classifier', prompt_version: 'mock-v1' },
+    meta: { model: 'mock-classifier', prompt_version: 'mock-v2', temperature: 0, votes: 3 },
     raw_output: { mock: true, count: items.length },
   }
 }
