@@ -39,7 +39,7 @@ const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))
 
 try {
-  await page.goto(`http://localhost:${PORT}/`)
+  await page.goto(`http://localhost:${PORT}/app/`) // SPA 는 /app 아래 (/ 는 랜딩)
 
   // 1) 데모 로그인 (모든 화면 고지 §1-2 확인 포함)
   check('고지 문구(로그인 화면)', await page.getByText('Estimates only', { exact: false }).first().isVisible())

@@ -24,8 +24,9 @@ export default function App() {
   if (!ready) return null
   if (!email) return <AuthPage onSignedIn={() => repo.getUserEmail().then(setEmail)} />
 
+  // 앱은 /app 아래에 배포된다 (/ 는 랜딩 페이지). vite.config.ts 멀티페이지 참조.
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/app">
       <Layout
         email={email}
         demo={repo.mode === 'demo'}

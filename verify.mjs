@@ -10,10 +10,10 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const html = readFileSync(join(__dirname, 'landing.html'))
+const html = readFileSync(join(__dirname, 'index.html'))
 const privacyHtml = readFileSync(join(__dirname, 'privacy.html'))
 
-// vercel 라우팅 흉내: /a /b /c → landing.html, /privacy → privacy.html (cleanUrls)
+// vercel 라우팅 흉내: /a /b /c → index.html (랜딩), /privacy → privacy.html (cleanUrls)
 const server = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html' })
   res.end(req.url.startsWith('/privacy') ? privacyHtml : html)
