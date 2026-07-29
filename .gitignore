@@ -26,3 +26,6 @@ dist-ssr
 # build/test artifacts
 smoke-*.png
 .env
+
+# secrets — supabase.txt holds the DB password in plaintext
+supabase.txt

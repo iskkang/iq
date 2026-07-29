@@ -27,7 +27,8 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 
 | 명령 | 내용 |
 |---|---|
-| `npm run test` | 단위 테스트 49건 (§4 계산식 + 골든 10건 + CSV 파싱) |
+| `npm run test` | 단위 테스트 58건 (§4 계산식 + 골든 10건 + CSV 파싱 + 301 원산지 스코핑) |
+| `npm run golden` | 골든 테스트 실행 (`golden-test-products.csv` → `test-results.md`) |
 | `npm run bench` | §6-2 벤치마크 (500 SKU 파이프라인) |
 | `npm run seed:rates` | rate 원장 시드 (옵션 `-- --usitc <USITC export.csv>` 로 공식 데이터 적재) |
 | `node scripts/smoke-e2e.mjs` | 데모 모드 E2E 스모크 (사전 `npm run build`) |
@@ -50,6 +51,23 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 | 5 | estimates-only 고지 전 화면·리포트 노출 | ✅ (E2E 스모크로 확인) |
 | 6 | RLS 계정 간 격리 | ✅ 정책 작성 완료. **실인스턴스 2계정 검증은 배포 후 `rls_checks.sql` 절차로 1회 수행** |
 | 3·4 | Free 한도·Stripe | Phase 2 |
+
+## 골든 테스트 (광고 집행 전 게이트)
+
+계획서 [golden-test-plan-v1.md](golden-test-plan-v1.md) · 결과 [test-results.md](test-results.md) (`npm run golden`)
+
+현재 상태 — **광고 집행 불가**:
+
+| 검증 | 결과 |
+|---|---|
+| §1 HTS 분류 | ⛔ 미집행 — `classify` Edge Function 미배포(404). mock 참고치 4/10 |
+| §2-1·2 세율 대조 | ❌ 실패 — 원장에 검증된 행 0/67 (전부 test seed·SAMPLE·placeholder) |
+| §2-3 계산 정확도 | ✅ 통과 — 배부 보존·MPF 캡 3경로 확인 |
+| §2-4 원산지 스코핑 | ✅ 통과 — [tests/golden.origin.test.ts](tests/golden.origin.test.ts) |
+| §3 E2E | ⛔ 미집행 — UI 수동 수행 필요 |
+
+`supabase/seed/hts_seed_golden_supplement.csv` 는 골든 실행을 완결시키기 위한 **자리표시자**입니다
+(9617·9405.21·9506.91·4419.11/12). USITC 확인 전까지 어떤 판단에도 쓰지 마세요.
 
 ## 주의 (운영 전 필수)
 
