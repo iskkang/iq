@@ -18,6 +18,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, join } from 'node:path'
 import Papa from 'papaparse'
 import { computeShipment, dutyBreakdownLabel } from '../src/lib/calc/engine'
+import type { ProgramContext } from '../src/lib/calc/engine'
+import type { DutyProgram } from '../src/lib/calc/programs'
 import { formatHts, normalizeHts } from '../src/lib/calc/rates'
 import { LAYER_LABEL } from '../src/lib/calc/types'
 import type {
@@ -329,6 +331,7 @@ function loadLedger(file: string): RateRow[] {
   const csv = readFileSync(join(root, file), 'utf-8')
   const parsed = Papa.parse<Record<string, string>>(csv, { header: true, skipEmptyLines: true })
   return parsed.data.map((r) => ({
+    program_code: r.program_code?.trim() || null,
     hts_code: r.hts_code.trim(),
     origin_country: r.origin_country?.trim() ? r.origin_country.trim().toUpperCase() : null,
     layer: r.layer.trim() as RateLayer,
@@ -355,6 +358,7 @@ function loadUsitcBaseMfn(): RateRow[] {
   return lines
     .filter((l) => l.adValorem !== null)
     .map((l) => ({
+      program_code: 'mfn',
       hts_code: l.code,
       origin_country: null,
       layer: 'base_mfn' as RateLayer,
@@ -365,7 +369,29 @@ function loadUsitcBaseMfn(): RateRow[] {
       note: l.general,
     }))
 }
-const SEED_LAYERS = loadLedger('supabase/seed/hts_seed_50.csv').filter((r) => r.layer !== 'base_mfn')
+
+/** 시드 프로그램 로드 (엔진 단일 경로 — ProgramContext 필수) */
+function loadProgramCtx(): ProgramContext {
+  const csv = readFileSync(join(root, 'supabase/seed/duty_programs.csv'), 'utf-8')
+  const parsed = Papa.parse<Record<string, string>>(csv, { header: true, skipEmptyLines: true })
+  const programs: DutyProgram[] = parsed.data
+    .filter((r) => r.code?.trim())
+    .map((r) => ({
+      code: r.code.trim(),
+      name: r.name?.trim() ?? r.code.trim(),
+      authority: r.authority?.trim() ?? '',
+      rate_type: (r.rate_type?.trim() || 'additive') as DutyProgram['rate_type'],
+      scope_type: (r.scope_type?.trim() || 'country_and_hts') as DutyProgram['scope_type'],
+      effective_from: r.effective_from.trim(),
+      effective_to: r.effective_to?.trim() ? r.effective_to.trim() : null,
+      source: r.source?.trim() || null,
+      note: r.note?.trim() || null,
+    }))
+  return { programs, exclusions: [] }
+}
+
+const PROGRAM_CTX = loadProgramCtx()
+const SEED_LAYERS = loadLedger('supabase/seed/hts_seed_50.csv').filter((r) => r.program_code !== 'mfn')
 const USITC_MFN = loadUsitcBaseMfn()
 const LEDGER: RateRow[] = [...USITC_MFN, ...SEED_LAYERS]
 const BASE_LEDGER = USITC_MFN
@@ -376,9 +402,9 @@ const SCENARIO_B: Record<string, { code: string; via: string }> = Object.fromEnt
 )
 
 const UNVERIFIED = new Set(
-  LEDGER.filter((r) => r.source === 'UNVERIFIED-PLACEHOLDER').map((r) => `${r.layer}|${r.hts_code}`),
+  LEDGER.filter((r) => r.source === 'UNVERIFIED-PLACEHOLDER').map((r) => `${r.program_code}|${r.hts_code}`),
 )
-const SAMPLE_ROWS = new Set(LEDGER.filter((r) => r.source === 'SAMPLE').map((r) => `${r.layer}|${r.hts_code}`))
+const SAMPLE_ROWS = new Set(LEDGER.filter((r) => r.source === 'SAMPLE').map((r) => `${r.program_code}|${r.hts_code}`))
 
 const usd = (n: number, d = 4) => `$${n.toFixed(d)}`
 const pct = (n: number) => `${(n * 100).toFixed(2)}%`
@@ -391,11 +417,19 @@ function hitsTarget(cands: HtsCandidate[], six: string[]): { hit: boolean; rank:
   return { hit: false, rank: null }
 }
 
+/** 프로그램 권한(authority)별 실제 가산율. 레이어 개념은 프로그램으로 대체됐다. */
 function layerRate(r: SkuResult, layer: RateLayer): number {
-  return r.duty_layers.find((l) => l.layer === layer)?.rate ?? 0
+  const auth = LAYER_TO_AUTHORITY[layer]
+  return r.applied_programs.filter((a) => a.authority === auth).reduce((sum, a) => sum + a.applied_rate, 0)
 }
 function layerMatch(r: SkuResult, layer: RateLayer): string | null {
-  return r.duty_layers.find((l) => l.layer === layer)?.matched_hts ?? null
+  const auth = LAYER_TO_AUTHORITY[layer]
+  return r.applied_programs.find((a) => a.authority === auth)?.matched_hts ?? null
+}
+const LAYER_TO_AUTHORITY: Record<RateLayer, string> = {
+  base_mfn: 'MFN',
+  section301: 'Section 301',
+  ieepa_reciprocal: 'IEEPA',
 }
 
 async function main() {
@@ -501,35 +535,42 @@ async function main() {
       provisional: g.provisional,
     }))
 
-  const resultA = computeShipment(SHIP, mkItems((g) => g.chosen), LEDGER, FEES)
-  const resultB = computeShipment(SHIP, mkItems((g) => SCENARIO_B[g.sku]?.code ?? null), LEDGER, FEES)
+  const resultA = computeShipment(SHIP, mkItems((g) => g.chosen), LEDGER, FEES, PROGRAM_CTX)
+  const resultB = computeShipment(SHIP, mkItems((g) => SCENARIO_B[g.sku]?.code ?? null), LEDGER, FEES, PROGRAM_CTX)
 
   // ── 부분 미스 무경고 탐지 ────────────────────────────────────
   // engine.ts 는 "모든 레이어가 미매칭"일 때만 경고한다. 일부 레이어만 원장에
   // 없으면 duty 가 조용히 과소계상된다 — 리포트에 아무 표시가 없다.
   const silentPartialMiss = resultB.items
     .filter((r) => {
-      const missed = r.duty_layers.filter((l) => l.matched_hts === null)
+      const missed = r.applied_programs.filter((a) => a.matched_hts === null)
       const expectsMfn = true
       const g = gated.find((x) => x.sku === r.sku)!
       const expects301 = g.origin_country === 'CN'
       const relevantMiss = missed.some(
-        (l) => (l.layer === 'base_mfn' && expectsMfn) || (l.layer === 'section301' && expects301),
+        (a) => (a.authority === 'MFN' && expectsMfn) || (a.authority === 'Section 301' && expects301),
       )
       return relevantMiss && r.warnings.length === 0
     })
     .map((r) => ({
       sku: r.sku,
-      missed: r.duty_layers.filter((l) => l.matched_hts === null).map((l) => l.layer),
+      missed: r.applied_programs.filter((a) => a.matched_hts === null).map((a) => a.program_code),
     }))
 
   // ── §검증2-4 원산지 스코핑 assert ────────────────────────────
+  // 중국 301(Lists 1-4A)은 중국산 전용이다. 2026-07-24 시행 강제노동 301 은
+  // 국가 단위로 60개 경제권에 붙으므로 비중국산에 있어도 위반이 아니다 —
+  // 프로그램을 구분하지 않으면 이 검사가 오탐한다.
+  const CHINA_ONLY_PROGRAM = '301-china-legacy'
+  const chinaOnlyRate = (r: SkuResult) =>
+    r.applied_programs.filter((a) => a.program_code === CHINA_ONLY_PROGRAM).reduce((s, a) => s + a.applied_rate, 0)
+
   const originViolations: string[] = []
   for (const res of [resultA, resultB]) {
     for (const r of res.items) {
       const origin = gated.find((g) => g.sku === r.sku)!.origin_country
-      if (origin !== 'CN' && layerRate(r, 'section301') > 0) {
-        originViolations.push(`${r.sku} (${origin}): section301 ${pct(layerRate(r, 'section301'))}`)
+      if (origin !== 'CN' && chinaOnlyRate(r) > 0) {
+        originViolations.push(`${r.sku} (${origin}): 중국 301 ${pct(chinaOnlyRate(r))}`)
       }
     }
   }
@@ -900,10 +941,10 @@ async function main() {
   }
 
   const unverifiedUse = resultB.items
-    .filter((r) => r.duty_layers.some((l) => l.matched_hts && UNVERIFIED.has(`${l.layer}|${l.matched_hts}`)))
+    .filter((r) => r.applied_programs.some((a) => a.matched_hts && UNVERIFIED.has(`${a.program_code}|${a.matched_hts}`)))
     .map((r) => r.sku)
   const sampleUse = resultB.items
-    .filter((r) => r.duty_layers.some((l) => l.matched_hts && SAMPLE_ROWS.has(`${l.layer}|${l.matched_hts}`)))
+    .filter((r) => r.applied_programs.some((a) => a.matched_hts && SAMPLE_ROWS.has(`${a.program_code}|${a.matched_hts}`)))
     .map((r) => r.sku)
   p(`**자리표시자(UNVERIFIED) 세율에 의존하는 SKU**: ${unverifiedUse.join(', ') || '없음'}`)
   p()
@@ -920,7 +961,9 @@ async function main() {
   p('|---|---|---|---|')
   for (const r of resultB.items) {
     const g = gated.find((x) => x.sku === r.sku)!
-    const missed = r.duty_layers.filter((l) => l.matched_hts === null).map((l) => LAYER_LABEL[l.layer])
+    const missed = (['base_mfn', 'section301', 'ieepa_reciprocal'] as RateLayer[])
+      .filter((l) => layerMatch(r, l) === null && layerRate(r, l) === 0)
+      .map((l) => LAYER_LABEL[l])
     p(
       `| ${r.sku} | ${g.origin_country} | ${missed.join(', ') || '없음'} | ${r.warnings.length > 0 ? r.warnings.map((w) => `⚠ ${w}`).join('<br>') : '—'} |`,
     )
@@ -979,6 +1022,7 @@ async function main() {
       })),
       LEDGER,
       FEES,
+      PROGRAM_CTX,
     )
     const raw = scaled.totals.total_value * FEES.mpf_rate
     const path =
@@ -1049,17 +1093,23 @@ async function main() {
   p()
   p('## §검증2-4 — 원산지 스코핑 assert')
   p()
-  p('301 은 중국산 전용. VN·IN 에 301 이 붙으면 즉시 실패.')
+  p('**중국 301(Lists 1-4A)** 은 중국산 전용. VN·IN 에 붙으면 즉시 실패.')
   p()
-  p('| SKU | 원산지 | 301 (시나리오 A) | 301 (시나리오 B) | 판정 |')
-  p('|---|---|---|---|---|')
+  p('2026-07-24 시행 **강제노동 301** 은 국가 단위로 60개 경제권에 붙으므로 비중국산에 있어도 정상이다 —')
+  p('프로그램을 구분하지 않고 "Section 301" 로 뭉뚱그리면 이 검사가 오탐한다.')
+  p()
+  p('| SKU | 원산지 | 중국 301 (A) | 중국 301 (B) | 강제노동 301 (B) | 판정 |')
+  p('|---|---|---|---|---|---|')
   for (const g of gated) {
     const a = resultA.items.find((x) => x.sku === g.sku)!
     const b = resultB.items.find((x) => x.sku === g.sku)!
-    const ra = layerRate(a, 'section301')
-    const rb = layerRate(b, 'section301')
+    const ra = chinaOnlyRate(a)
+    const rb = chinaOnlyRate(b)
+    const fl = b.applied_programs
+      .filter((x) => x.program_code.startsWith('301-forced-labor'))
+      .reduce((s, x) => s + x.applied_rate, 0)
     const bad = g.origin_country !== 'CN' && (ra > 0 || rb > 0)
-    p(`| ${g.sku} | ${g.origin_country} | ${pct(ra)} | ${pct(rb)} | ${g.origin_country === 'CN' ? '—' : bad ? '❌ 위반' : '✅'} |`)
+    p(`| ${g.sku} | ${g.origin_country} | ${pct(ra)} | ${pct(rb)} | ${pct(fl)} | ${g.origin_country === 'CN' ? '—' : bad ? '❌ 위반' : '✅'} |`)
   }
   p()
   p(originViolations.length === 0 ? '**PASS** — 비중국산 SKU 중 301 이 적용된 건 없음.' : `**FAIL** — ${originViolations.join(' / ')}`)

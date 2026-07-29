@@ -4,6 +4,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { FeeSettings, RateRow } from '../calc/types'
+import type { DutyProgram, ProgramExclusion } from '../calc/programs'
 import { resolveStatus } from '../classify/status'
 import type { ClassifyBatchResult } from '../classify/types'
 import type { ParsedItemRow } from '../csv/parseItems'
@@ -198,10 +199,34 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
       for (;;) {
         const { data, error } = await supabase
           .from('rate_ledger')
-          .select('hts_code, origin_country, layer, ad_valorem_rate, effective_from, effective_to')
+          .select('program_code, hts_code, origin_country, layer, ad_valorem_rate, effective_from, effective_to')
           .range(from, from + page - 1)
         throwIf(error, 'Failed to load rate ledger')
         const rows = (data ?? []).map((r) => ({ ...r, ad_valorem_rate: Number(r.ad_valorem_rate) })) as RateRow[]
+        all.push(...rows)
+        if (rows.length < page) break
+        from += page
+      }
+      return all
+    },
+    async getPrograms(): Promise<DutyProgram[]> {
+      const { data, error } = await supabase
+        .from('duty_programs')
+        .select('code, name, authority, rate_type, scope_type, effective_from, effective_to, source, note')
+      throwIf(error, 'Failed to load duty programs')
+      return (data ?? []) as DutyProgram[]
+    },
+    async getExclusions(): Promise<ProgramExclusion[]> {
+      const all: ProgramExclusion[] = []
+      let from = 0
+      const page = 1000
+      for (;;) {
+        const { data, error } = await supabase
+          .from('program_exclusions')
+          .select('program_code, hts_code')
+          .range(from, from + page - 1)
+        throwIf(error, 'Failed to load program exclusions')
+        const rows = (data ?? []) as ProgramExclusion[]
         all.push(...rows)
         if (rows.length < page) break
         from += page

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { DisclaimerBlock } from '../components/Disclaimer'
 import { computeShipment, dutyBreakdownLabel } from '../lib/calc/engine'
+import type { ProgramContext } from '../lib/calc/engine'
 import { fmtPct, fmtUsd, round2 } from '../lib/calc/money'
 import { isReviewed, UNREVIEWED_LABEL } from '../lib/classify/status'
 import { formatHts } from '../lib/calc/rates'
@@ -13,20 +14,22 @@ export function ReportView({ shipment, items }: { shipment: Shipment; items: Ite
   const repo = getRepo()
   const [rates, setRates] = useState<RateRow[] | null>(null)
   const [fees, setFees] = useState<FeeSettings | null>(null)
+  const [ctx, setCtx] = useState<ProgramContext | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
-    Promise.all([repo.getRates(), repo.getFees(shipment.rate_as_of)])
-      .then(([r, f]) => {
+    Promise.all([repo.getRates(), repo.getFees(shipment.rate_as_of), repo.getPrograms(), repo.getExclusions()])
+      .then(([r, f, programs, exclusions]) => {
         setRates(r)
         setFees(f)
+        setCtx({ programs, exclusions })
       })
       .catch((e) => setErr(String(e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shipment.rate_as_of])
 
   const result = useMemo(() => {
-    if (!rates || !fees) return null
+    if (!rates || !fees || !ctx) return null
     const calcItems: CalcItem[] = items.map((it) => ({
       sku: it.sku,
       unit_cost_usd: it.unit_cost_usd,
@@ -50,8 +53,9 @@ export function ReportView({ shipment, items }: { shipment: Shipment; items: Ite
       calcItems,
       rates,
       fees,
+      ctx,
     )
-  }, [rates, fees, items, shipment])
+  }, [rates, fees, ctx, items, shipment])
 
   if (err) return <p className="text-sm text-rose-600">{err}</p>
   if (!result) return <p className="text-sm text-slate-500">Loading rate ledger…</p>

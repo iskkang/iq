@@ -1,0 +1,8 @@
+code,name,authority,rate_type,scope_type,effective_from,effective_to,source,note
+mfn,Base MFN (Column 1 General),MFN,additive,hts_list,1900-01-01,,USITC HTS General Rate of Duty,USITC 공식 export 에서 적재 — 검증됨
+301-china-legacy,Section 301 — China Lists 1-4A,Section 301,additive,country_and_hts,2018-07-06,,HTSUS 9903.88.01-.04 / .15,대법원 IEEPA 판결과 무관하게 유효. 적용 대상은 U.S. note 20 의 8자리 열거 목록 — 현재 원장의 4자리 행은 구조적 오류로 재적재 필요
+ieepa-reciprocal,IEEPA reciprocal tariffs,IEEPA,additive,country,2025-04-09,2026-02-24,HTSUS 9903.01/.02,2026-02-20 연방대법원 6-3 (Roberts) 판결로 무효 — IEEPA 는 대통령에게 관세 권한을 주지 않는다. 02-24 종료. effective_to 로 계산에서 자동 제외된다
+ieepa-trafficking,IEEPA trafficking/fentanyl tariffs,IEEPA,additive,country,2025-02-04,2026-02-24,HTSUS 9903.01.20/.24,동일 판결로 무효. 02-24 종료
+122,Section 122 balance-of-payments surcharge,Section 122,additive,all,2026-02-24,2026-07-24,HTSUS 9903.03.01,IEEPA 대체. 전 국가 일률 10%. 150일 법정 상한으로 2026-07-24 만료
+301-forced-labor,Section 301 — forced labor (60 economies),Section 301,additive,country,2026-07-24,,USTR forced-labor 301 (eff. 2026-07-24),Section 122 대체. 60개 경제권 10% 또는 12.5%. 면제 471개 소호는 program_exclusions 참조. **USTR annex 원문 대조 필요**
+301-forced-labor-topup,Section 301 — forced labor (combined-rate targets),Section 301,top_up_to_total,country,2026-07-24,,USTR forced-labor 301 (eff. 2026-07-24),EU·대만은 MFN+301 합계 10%%, 일본·한국·스위스는 합계 12.5%% 가 되도록 보정. ad_valorem_rate 는 목표 합계다. **USTR annex 원문 대조 필요**

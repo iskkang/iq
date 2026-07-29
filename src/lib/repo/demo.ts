@@ -3,10 +3,11 @@
  * 분류는 mock, rate 원장은 동봉 시드 사용.
  */
 import type { FeeSettings, RateRow } from '../calc/types'
+import type { DutyProgram, ProgramExclusion } from '../calc/programs'
 import { resolveStatus } from '../classify/status'
 import type { ClassifyBatchResult } from '../classify/types'
 import type { ParsedItemRow } from '../csv/parseItems'
-import { DEFAULT_FEES, SEED_RATES } from '../seedRates'
+import { DEFAULT_FEES, SEED_EXCLUSIONS, SEED_PROGRAMS, SEED_RATES } from '../seedRates'
 import type { Item, ItemPatch, NewShipment, Repo, Shipment } from './types'
 
 let seq = 0
@@ -118,6 +119,12 @@ export function createDemoRepo(): Repo {
 
     async getRates(): Promise<RateRow[]> {
       return SEED_RATES
+    },
+    async getPrograms(): Promise<DutyProgram[]> {
+      return SEED_PROGRAMS
+    },
+    async getExclusions(): Promise<ProgramExclusion[]> {
+      return SEED_EXCLUSIONS
     },
     async getFees(): Promise<FeeSettings> {
       return DEFAULT_FEES

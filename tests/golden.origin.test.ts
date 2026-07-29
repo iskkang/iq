@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url'
 import Papa from 'papaparse'
 import { describe, expect, it } from 'vitest'
 import { computeShipment } from '../src/lib/calc/engine'
-import { lookupLayerRate } from '../src/lib/calc/rates'
+import type { ProgramContext } from '../src/lib/calc/engine'
+import type { DutyProgram } from '../src/lib/calc/programs'
+import { resolvePrograms } from '../src/lib/calc/programs'
 import type { CalcItem, CalcShipment, FeeSettings, RateLayer, RateRow } from '../src/lib/calc/types'
 import { parseItemsCsv } from '../src/lib/csv/parseItems'
 
@@ -23,6 +25,7 @@ function loadLedger(file: string): RateRow[] {
     skipEmptyLines: true,
   })
   return parsed.data.map((r) => ({
+    program_code: r.program_code?.trim() || null,
     hts_code: r.hts_code.trim(),
     origin_country: r.origin_country?.trim() ? r.origin_country.trim().toUpperCase() : null,
     layer: r.layer.trim() as RateLayer,
@@ -38,6 +41,14 @@ const LEDGER: RateRow[] = [
   ...loadLedger('supabase/seed/hts_seed_50.csv'),
   ...loadLedger('supabase/seed/hts_seed_golden_supplement.csv'),
 ]
+
+const PROGRAMS: DutyProgram[] = [
+  { code: 'mfn', name: 'Base MFN', authority: 'MFN', rate_type: 'additive', scope_type: 'hts_list', effective_from: '1900-01-01', effective_to: null },
+  { code: '301-china-legacy', name: 'China 301', authority: 'Section 301', rate_type: 'additive', scope_type: 'country_and_hts', effective_from: '2018-07-06', effective_to: null },
+  { code: '301-forced-labor', name: 'Forced labor 301', authority: 'Section 301 FL', rate_type: 'additive', scope_type: 'country', effective_from: '2026-07-24', effective_to: null },
+  { code: 'ieepa-reciprocal', name: 'IEEPA', authority: 'IEEPA', rate_type: 'additive', scope_type: 'country', effective_from: '2025-04-09', effective_to: '2026-02-24' },
+]
+const CTX: ProgramContext = { programs: PROGRAMS, exclusions: [] }
 
 const FEES: FeeSettings = {
   mpf_rate: 0.003464,
@@ -72,37 +83,40 @@ const TARGET_HTS: Record<string, string> = {
 }
 
 describe('§검증2-4 — Section 301 원산지 스코핑', () => {
-  it('원장의 section301 행은 전부 origin_country=CN 이어야 한다', () => {
-    const offenders = LEDGER.filter((r) => r.layer === 'section301' && r.origin_country !== 'CN').map(
-      (r) => `${r.hts_code}/${r.origin_country ?? 'ALL'}`,
-    )
+  it('중국 301 원장 행은 전부 origin_country=CN 이어야 한다', () => {
+    const offenders = LEDGER.filter(
+      (r) => r.program_code === '301-china-legacy' && r.origin_country !== 'CN',
+    ).map((r) => `${r.hts_code}/${r.origin_country ?? 'ALL'}`)
     expect(offenders).toEqual([])
   })
 
-  it('section301 행에 origin_country=null(전 원산지) 이 있으면 안 된다 — 비중국산에 새어나간다', () => {
-    expect(LEDGER.filter((r) => r.layer === 'section301' && r.origin_country === null)).toHaveLength(0)
+  it('중국 301 행에 origin_country=null 이 있으면 안 된다 — 비중국산에 새어나간다', () => {
+    expect(
+      LEDGER.filter((r) => r.program_code === '301-china-legacy' && r.origin_country === null),
+    ).toHaveLength(0)
   })
 
-  it('CN 이 아닌 원산지는 어떤 HTS 로도 section301 이 조회되지 않는다', () => {
+  it('CN 이 아닌 원산지는 어떤 HTS 로도 중국 301 이 적용되지 않는다', () => {
     const nonCn = ['VN', 'IN', 'TH', 'MX', 'KR', 'US', 'BD', 'ID', 'KH', 'TW']
     const htsCodes = [...new Set(LEDGER.map((r) => r.hts_code))].filter((h) => h !== '*')
     for (const origin of nonCn) {
       for (const hts of htsCodes) {
-        const hit = lookupLayerRate(LEDGER, 'section301', hts.padEnd(10, '0'), origin, SHIP.rate_as_of)
-        expect(hit.rate, `${hts} × ${origin} 에 301 이 적용됨`).toBe(0)
-        expect(hit.matched_hts, `${hts} × ${origin} 이 301 행에 매칭됨`).toBeNull()
+        const { applied } = resolvePrograms(LEDGER, PROGRAMS, [], hts.padEnd(10, '0'), origin, SHIP.rate_as_of)
+        const cn301 = applied.find((a) => a.program_code === '301-china-legacy')
+        expect(cn301, `${hts} × ${origin} 에 중국 301 이 적용됨`).toBeUndefined()
       }
     }
   })
 
   it('원산지 대소문자·공백이 스코프를 우회하지 못한다', () => {
     for (const origin of ['vn', ' VN ', 'In', 'in']) {
-      const hit = lookupLayerRate(LEDGER, 'section301', '6912004810', origin, SHIP.rate_as_of)
-      expect(hit.rate).toBe(0)
+      const { applied } = resolvePrograms(LEDGER, PROGRAMS, [], '6912004810', origin, SHIP.rate_as_of)
+      expect(applied.find((a) => a.program_code === '301-china-legacy')).toBeUndefined()
     }
     // CN 은 반대로 대소문자·공백과 무관하게 반드시 잡혀야 한다 (스코핑이 과하게 좁지 않은지)
     for (const origin of ['cn', ' CN ', 'Cn']) {
-      expect(lookupLayerRate(LEDGER, 'section301', '6912004810', origin, SHIP.rate_as_of).rate).toBeGreaterThan(0)
+      const { applied } = resolvePrograms(LEDGER, PROGRAMS, [], '6912004810', origin, SHIP.rate_as_of)
+      expect(applied.find((a) => a.program_code === '301-china-legacy')?.applied_rate ?? 0).toBeGreaterThan(0)
     }
   })
 })
@@ -128,33 +142,36 @@ describe('§검증2-4 — 골든 CSV 실물 통과 시 비중국산에 301 미�
     current_price_usd: r.current_price_usd,
     hts_code: TARGET_HTS[r.sku] ?? null,
   }))
-  const result = computeShipment(SHIP, items, LEDGER, FEES)
+  const result = computeShipment(SHIP, items, LEDGER, FEES, CTX)
 
   for (const r of result.items) {
     const origin = rows.find((x) => x.sku === r.sku)!.origin_country
     if (origin === 'CN') continue
-    it(`${r.sku} (${origin}): section301 = 0`, () => {
-      const layer = r.duty_layers.find((l) => l.layer === 'section301')!
-      expect(layer.rate).toBe(0)
-      expect(layer.matched_hts).toBeNull()
-      // duty 총합이 MFN + IEEPA 만으로 설명되어야 한다
-      const mfn = r.duty_layers.find((l) => l.layer === 'base_mfn')!.rate
-      const ieepa = r.duty_layers.find((l) => l.layer === 'ieepa_reciprocal')!.rate
-      expect(r.duty_rate_total).toBeCloseTo(mfn + ieepa, 10)
+    it(`${r.sku} (${origin}): 중국 301 미적용`, () => {
+      expect(r.applied_programs.some((a) => a.program_code === '301-china-legacy')).toBe(false)
+      // duty 총합이 중국 301 을 뺀 나머지 프로그램으로 설명되어야 한다
+      const sum = r.applied_programs.reduce((acc, a) => acc + a.applied_rate, 0)
+      expect(r.duty_rate_total).toBeCloseTo(sum, 10)
     })
   }
 
-  it('IEEPA 는 국가 단위 레이어이므로 원산지별로 다르게 적용된다 (301 과 혼동 금지)', () => {
+  it('IEEPA 는 무효라 어떤 원산지에도 적용되지 않는다 (원장에 행이 남아 있어도)', () => {
+    expect(LEDGER.some((r) => r.program_code === 'ieepa-reciprocal')).toBe(true)
+    for (const r of result.items) {
+      expect(r.applied_programs.some((a) => a.program_code === 'ieepa-reciprocal')).toBe(false)
+    }
+  })
+
+  it('강제노동 301 은 국가 단위라 비중국산에도 붙는다 (중국 301 과 혼동 금지)', () => {
     const byOrigin = new Map(rows.map((r) => [r.sku, r.origin_country]))
     for (const r of result.items) {
-      const ieepa = r.duty_layers.find((l) => l.layer === 'ieepa_reciprocal')!
       const origin = byOrigin.get(r.sku)!
-      // 원장에 해당 국가 IEEPA 행이 있으면 매칭, 없으면 0 (스펙 §4)
       const hasRow = LEDGER.some(
-        (x) => x.layer === 'ieepa_reciprocal' && x.origin_country === origin && x.effective_from <= SHIP.rate_as_of,
+        (x) => x.program_code === '301-forced-labor' && x.origin_country === origin,
       )
-      if (hasRow) expect(ieepa.rate).toBeGreaterThan(0)
-      else expect(ieepa.rate).toBe(0)
+      const applied = r.applied_programs.find((a) => a.program_code === '301-forced-labor')
+      if (hasRow) expect(applied?.applied_rate ?? 0).toBeGreaterThan(0)
+      else expect(applied).toBeUndefined()
     }
   })
 })

@@ -1,63 +1,72 @@
-hts_code,origin_country,layer,ad_valorem_rate,effective_from,effective_to,source,note
-3924104000,,base_mfn,0.034,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-3924905650,,base_mfn,0.034,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-3926909985,,base_mfn,0.053,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-3926400090,,base_mfn,0.053,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-4202228100,,base_mfn,0.176,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-4202923120,,base_mfn,0.176,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-4202923131,,base_mfn,0.176,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-4202991000,,base_mfn,0.034,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-4419909100,,base_mfn,0.032,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-4420908000,,base_mfn,0.032,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-4819100040,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-4820102020,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-4911912040,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6109100004,,base_mfn,0.165,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6109100060,,base_mfn,0.165,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6109901007,,base_mfn,0.32,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6110202079,,base_mfn,0.165,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6110303059,,base_mfn,0.32,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6203424511,,base_mfn,0.166,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6204628011,,base_mfn,0.166,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6302319040,,base_mfn,0.067,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6302600020,,base_mfn,0.091,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6307909891,,base_mfn,0.07,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6402993165,,base_mfn,0.06,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6404119050,,base_mfn,0.2,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6404199060,,base_mfn,0.09,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6911108010,,base_mfn,0.208,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6912004810,,base_mfn,0.098,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-6913905000,,base_mfn,0.06,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-7009921000,,base_mfn,0.078,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-7013492000,,base_mfn,0.225,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-7117199000,,base_mfn,0.11,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-7323930060,,base_mfn,0.02,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-7323999080,,base_mfn,0.034,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-7615107125,,base_mfn,0.031,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-8205513030,,base_mfn,0.037,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-8414519090,,base_mfn,0.047,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-8509400025,,base_mfn,0.042,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-8516710020,,base_mfn,0.037,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-8517620090,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-8518220000,,base_mfn,0.049,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-8518302000,,base_mfn,0.049,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-8544429090,,base_mfn,0.026,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-8708998180,,base_mfn,0.025,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-8712001550,,base_mfn,0.11,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-9403200050,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-9403608081,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-9404902000,,base_mfn,0.06,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-9503000073,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-9505102500,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-3924,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-4202,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-6109,CN,section301,0.075,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-6302,CN,section301,0.075,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-6912,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-7323,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-8414,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-8518,CN,section301,0.075,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-8544,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-9403,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-*,CN,ieepa_reciprocal,0.1,2025-04-09,,SAMPLE,SAMPLE value — country-level layer, admin must confirm
-*,VN,ieepa_reciprocal,0.2,2025-04-09,,SAMPLE,SAMPLE value — country-level layer, admin must confirm
+program_code,hts_code,origin_country,layer,ad_valorem_rate,effective_from,effective_to,source,note
+mfn,3924104000,,base_mfn,0.034,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,3924905650,,base_mfn,0.034,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,3926909985,,base_mfn,0.053,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,3926400090,,base_mfn,0.053,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,4202228100,,base_mfn,0.176,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,4202923120,,base_mfn,0.176,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,4202923131,,base_mfn,0.176,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,4202991000,,base_mfn,0.034,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,4419909100,,base_mfn,0.032,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,4420908000,,base_mfn,0.032,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,4819100040,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,4820102020,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,4911912040,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6109100004,,base_mfn,0.165,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6109100060,,base_mfn,0.165,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6109901007,,base_mfn,0.32,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6110202079,,base_mfn,0.165,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6110303059,,base_mfn,0.32,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6203424511,,base_mfn,0.166,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6204628011,,base_mfn,0.166,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6302319040,,base_mfn,0.067,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6302600020,,base_mfn,0.091,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6307909891,,base_mfn,0.07,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6402993165,,base_mfn,0.06,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6404119050,,base_mfn,0.2,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6404199060,,base_mfn,0.09,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6911108010,,base_mfn,0.208,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6912004810,,base_mfn,0.098,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,6913905000,,base_mfn,0.06,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,7009921000,,base_mfn,0.078,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,7013492000,,base_mfn,0.225,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,7117199000,,base_mfn,0.11,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,7323930060,,base_mfn,0.02,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,7323999080,,base_mfn,0.034,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,7615107125,,base_mfn,0.031,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,8205513030,,base_mfn,0.037,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,8414519090,,base_mfn,0.047,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,8509400025,,base_mfn,0.042,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,8516710020,,base_mfn,0.037,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,8517620090,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,8518220000,,base_mfn,0.049,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,8518302000,,base_mfn,0.049,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,8544429090,,base_mfn,0.026,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,8708998180,,base_mfn,0.025,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,8712001550,,base_mfn,0.11,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,9403200050,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,9403608081,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,9404902000,,base_mfn,0.06,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,9503000073,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+mfn,9505102500,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
+301-china-legacy,3924,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
+301-china-legacy,4202,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
+301-china-legacy,6109,CN,section301,0.075,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
+301-china-legacy,6302,CN,section301,0.075,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
+301-china-legacy,6912,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
+301-china-legacy,7323,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
+301-china-legacy,8414,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
+301-china-legacy,8518,CN,section301,0.075,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
+301-china-legacy,8544,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
+301-china-legacy,9403,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
+ieepa-reciprocal,*,CN,ieepa_reciprocal,0.1,2025-04-09,,SAMPLE,SAMPLE value — country-level layer
+ieepa-reciprocal,*,VN,ieepa_reciprocal,0.2,2025-04-09,,SAMPLE,SAMPLE value — country-level layer
+301-forced-labor,*,CN,section301,0.125,2026-07-24,,USTR forced-labor 301 eff. 2026-07-24,2차 자료 교차확인 (Baker McKenzie/Morgan Lewis/Honigman/CV Intl) — USTR annex 원문 대조 필요
+301-forced-labor,*,VN,section301,0.125,2026-07-24,,USTR forced-labor 301 eff. 2026-07-24,2차 자료 교차확인 (Baker McKenzie/Morgan Lewis/Honigman/CV Intl) — USTR annex 원문 대조 필요
+301-forced-labor,*,IN,section301,0.10,2026-07-24,,USTR forced-labor 301 eff. 2026-07-24,2차 자료 교차확인 (Baker McKenzie/Morgan Lewis/Honigman/CV Intl) — USTR annex 원문 대조 필요
+301-forced-labor-topup,*,DE,section301,0.10,2026-07-24,,USTR forced-labor 301 eff. 2026-07-24,ad_valorem_rate 는 MFN+301 목표 합계. 2차 자료 교차확인 (Baker McKenzie/Morgan Lewis/Honigman/CV Intl) — USTR annex 원문 대조 필요
+301-forced-labor-topup,*,TW,section301,0.10,2026-07-24,,USTR forced-labor 301 eff. 2026-07-24,ad_valorem_rate 는 MFN+301 목표 합계. 2차 자료 교차확인 (Baker McKenzie/Morgan Lewis/Honigman/CV Intl) — USTR annex 원문 대조 필요
+301-forced-labor-topup,*,JP,section301,0.125,2026-07-24,,USTR forced-labor 301 eff. 2026-07-24,ad_valorem_rate 는 MFN+301 목표 합계. 2차 자료 교차확인 (Baker McKenzie/Morgan Lewis/Honigman/CV Intl) — USTR annex 원문 대조 필요
+301-forced-labor-topup,*,KR,section301,0.125,2026-07-24,,USTR forced-labor 301 eff. 2026-07-24,ad_valorem_rate 는 MFN+301 목표 합계. 2차 자료 교차확인 (Baker McKenzie/Morgan Lewis/Honigman/CV Intl) — USTR annex 원문 대조 필요
+301-forced-labor-topup,*,CH,section301,0.125,2026-07-24,,USTR forced-labor 301 eff. 2026-07-24,ad_valorem_rate 는 MFN+301 목표 합계. 2차 자료 교차확인 (Baker McKenzie/Morgan Lewis/Honigman/CV Intl) — USTR annex 원문 대조 필요
+122,*,,base_mfn,0.10,2026-02-24,2026-07-24,HTSUS 9903.03.01,만료 — 발효일 기반 자동 제외 검증용

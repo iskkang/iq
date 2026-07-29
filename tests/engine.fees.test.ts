@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import type { ProgramContext } from '../src/lib/calc/engine'
+import type { DutyProgram } from '../src/lib/calc/programs'
 import { computeShipment } from '../src/lib/calc/engine'
 import type { CalcItem, CalcShipment, FeeSettings } from '../src/lib/calc/types'
 
@@ -9,6 +11,13 @@ const FEES: FeeSettings = {
   hmf_rate: 0.00125,
   effective_from: '2024-10-01',
 }
+
+const PROGRAMS: DutyProgram[] = [
+  { code: 'mfn', name: 'Base MFN', authority: 'MFN', rate_type: 'additive', scope_type: 'hts_list', effective_from: '1900-01-01', effective_to: null },
+  { code: '301-china-legacy', name: 'China 301', authority: 'Section 301', rate_type: 'additive', scope_type: 'country_and_hts', effective_from: '2018-07-06', effective_to: null },
+  { code: 'ieepa-reciprocal', name: 'IEEPA', authority: 'IEEPA', rate_type: 'additive', scope_type: 'country', effective_from: '2025-04-09', effective_to: '2026-02-24' },
+]
+const CTX: ProgramContext = { programs: PROGRAMS, exclusions: [] }
 
 const ship = (p: Partial<CalcShipment> = {}): CalcShipment => ({
   freight_usd: 0,
@@ -33,7 +42,7 @@ const item = (p: Partial<CalcItem> = {}): CalcItem => ({
 describe('MPF — 선적 단위 0.3464% + min·max 캡 (스펙 §4)', () => {
   it('캡 사이: 총가액 × 0.3464%', () => {
     // 총가액 23,925 → MPF 82.8762
-    const r = computeShipment(ship(), [item({ unit_cost_usd: 239.25, units_per_shipment: 100 })], [], FEES)
+    const r = computeShipment(ship(), [item({ unit_cost_usd: 239.25, units_per_shipment: 100 })], [], FEES, CTX)
     expect(r.totals.mpf_shipment).toBeCloseTo(82.8762, 6)
     // 단일 SKU → 전액 배부, 단위당 = 82.8762 / 100
     expect(r.items[0].mpf_per_unit).toBeCloseTo(0.828762, 6)
@@ -41,14 +50,14 @@ describe('MPF — 선적 단위 0.3464% + min·max 캡 (스펙 §4)', () => {
 
   it('min 캡: 소액 선적은 최소 $32.71', () => {
     // 총가액 1,000 → 3.464 → min 32.71
-    const r = computeShipment(ship(), [item({ unit_cost_usd: 10, units_per_shipment: 100 })], [], FEES)
+    const r = computeShipment(ship(), [item({ unit_cost_usd: 10, units_per_shipment: 100 })], [], FEES, CTX)
     expect(r.totals.mpf_shipment).toBeCloseTo(32.71, 2)
     expect(r.items[0].mpf_per_unit).toBeCloseTo(0.3271, 4)
   })
 
   it('max 캡: 고액 선적은 최대 $634.62', () => {
     // 총가액 500,000 → 1,732 → max 634.62
-    const r = computeShipment(ship(), [item({ unit_cost_usd: 5000, units_per_shipment: 100 })], [], FEES)
+    const r = computeShipment(ship(), [item({ unit_cost_usd: 5000, units_per_shipment: 100 })], [], FEES, CTX)
     expect(r.totals.mpf_shipment).toBeCloseTo(634.62, 2)
   })
 
@@ -57,7 +66,7 @@ describe('MPF — 선적 단위 0.3464% + min·max 캡 (스펙 §4)', () => {
       item({ sku: 'A', unit_cost_usd: 30, units_per_shipment: 100, weight_kg_per_unit: 1 }), // 가액 3000 (75%)
       item({ sku: 'B', unit_cost_usd: 10, units_per_shipment: 100, weight_kg_per_unit: 9 }), // 가액 1000 (25%)
     ]
-    const r = computeShipment(ship({ allocation_basis: 'weight', freight_usd: 1000 }), items, [], FEES)
+    const r = computeShipment(ship({ allocation_basis: 'weight', freight_usd: 1000 }), items, [], FEES, CTX)
     const mpf = r.totals.mpf_shipment // 4000×0.003464 → min 캡 32.71
     expect(mpf).toBeCloseTo(32.71, 2)
     expect(r.items[0].mpf_per_unit).toBeCloseTo((mpf * 0.75) / 100, 6)
@@ -68,20 +77,20 @@ describe('MPF — 선적 단위 0.3464% + min·max 캡 (스펙 §4)', () => {
   })
 
   it('빈 선적(총가액 0)이면 MPF 0 (min 캡 미적용)', () => {
-    const r = computeShipment(ship(), [], [], FEES)
+    const r = computeShipment(ship(), [], [], FEES, CTX)
     expect(r.totals.mpf_shipment).toBe(0)
   })
 })
 
 describe('HMF — ocean 전용 0.125% (스펙 §4)', () => {
   it('ocean: 가액 × 0.125% 배부 → 단위당 = unit_cost × 0.125%', () => {
-    const r = computeShipment(ship({ mode: 'ocean' }), [item({ unit_cost_usd: 20 })], [], FEES)
+    const r = computeShipment(ship({ mode: 'ocean' }), [item({ unit_cost_usd: 20 })], [], FEES, CTX)
     expect(r.totals.hmf_shipment).toBeCloseTo(20 * 100 * 0.00125, 6)
     expect(r.items[0].hmf_per_unit).toBeCloseTo(20 * 0.00125, 6)
   })
 
   it('air: HMF 없음', () => {
-    const r = computeShipment(ship({ mode: 'air' }), [item()], [], FEES)
+    const r = computeShipment(ship({ mode: 'air' }), [item()], [], FEES, CTX)
     expect(r.totals.hmf_shipment).toBe(0)
     expect(r.items[0].hmf_per_unit).toBe(0)
   })

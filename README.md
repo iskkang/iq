@@ -28,7 +28,7 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 
 | 명령 | 내용 |
 |---|---|
-| `npm run test` | 단위 테스트 132건 (§4 계산식 + 골든 10건 + CSV 파싱 + 301 원산지 스코핑 + 분류 파이프라인) |
+| `npm run test` | 단위 테스트 123건 (§4 계산식 + 골든 10건 + CSV 파싱 + 301 원산지 스코핑 + 분류 파이프라인) |
 | `npm run golden` | 골든 테스트 실행 (`golden-test-products.csv` → `test-results.md`) |
 | `npm run bench` | §6-2 벤치마크 (`--sample=N` 비용, `--concurrency=N` 웨이브 실측) |
 | `npm run hts:ch99` | HTSUS Ch.99 → 301·IEEPA 관리자 확정 워크시트 |
@@ -66,7 +66,7 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 | §2-1·2 세율 | 부분 통과 — base MFN 17,633행 USITC 공식 적재. **301·IEEPA 는 관리자 확정 대기** |
 | §2-3 계산 정확도 | ✅ 통과 — 배부 보존·MPF 캡 3경로 |
 | §2-4 원산지 스코핑 | ✅ 통과 |
-| §6-2 500 SKU 3분 | ❌ **실패 — 실측 200s** (동시16, 4웨이브×50.0s). 아래 참조 |
+| §6-2 500 SKU 3분 | ⛔ **기준 폐기 예정** — 실측 200s(동시16). Pro 2,000 SKU 는 10분대라 동시성으로 못 푼다. 비동기 전환 후 "첫 결과 60초 / 완료 10분" 으로 교체 |
 | §3 E2E | ⛔ 미집행 — UI 수동 수행 필요 |
 
 **광고 집행은 아직 불가** — 남은 블로커는 §6-2(시간) · §2-1·2(301·IEEPA) · §3(E2E) 셋.
@@ -178,8 +178,13 @@ Section 122(07-24 만료) → 강제노동 301 — 마이그레이션 없이 프
 (일본 + MFN 4.9% → 301 은 7.6%, 합계 12.5%). 면제(`program_exclusions`)는 해당 프로그램만
 0 으로 만들고 리포트에 사유를 남긴다.
 
+**엔진은 단일 경로다.** 구 레이어 폴백(`lookupLayerRate`/`lookupDutyLayers`/`expectedLayers`)은
+삭제했다 — 두 경로가 공존하면 골든이 제품이 실제로 쓰는 경로를 재지 못한다
+(`pipeline.ts` 를 한 벌로 유지하는 것과 같은 이유). `computeShipment` 는 `ProgramContext` 를
+필수로 받는다.
+
 [programs.ts](src/lib/calc/programs.ts) · [migration 0004](supabase/migrations/0004_duty_programs.sql) ·
-테스트 [calc.programs.test.ts](tests/calc.programs.test.ts) 20건
+테스트 [calc.programs.test.ts](tests/calc.programs.test.ts)
 
 ### Section 301 확정
 

@@ -1,4 +1,5 @@
 import type { AllocationBasis, FeeSettings, RateRow, TransportMode } from '../calc/types'
+import type { DutyProgram, ProgramExclusion } from '../calc/programs'
 import type { ClassifyBatchResult, ClassifyConsensus, HtsCandidate } from '../classify/types'
 import type { ParsedItemRow } from '../csv/parseItems'
 
@@ -87,5 +88,9 @@ export interface Repo {
   saveClassification(shipmentId: string, batches: ClassifyBatchResult[]): Promise<void>
 
   getRates(): Promise<RateRow[]>
+  /** 관세 프로그램 (발효일·적용범위·가산방식) */
+  getPrograms(): Promise<DutyProgram[]>
+  /** 프로그램별 면제 라인 */
+  getExclusions(): Promise<ProgramExclusion[]>
   getFees(asOf: string): Promise<FeeSettings>
 }

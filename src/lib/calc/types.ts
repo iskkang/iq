@@ -87,6 +87,7 @@ export interface CalcShipment {
   rate_as_of: string
 }
 
+/** @deprecated 레이어 개념은 프로그램으로 대체됐다. lookupLayerRate 반환형으로만 남는다 */
 export interface DutyLayerDetail {
   layer: RateLayer
   rate: number
@@ -100,9 +101,8 @@ export interface SkuResult {
   provisional: boolean
   unit_cost: number
   units: number
-  duty_layers: DutyLayerDetail[]
-  /** 프로그램 경로로 계산했을 때의 상세 (발효일·적용범위·상한보정 근거) */
-  applied_programs?: AppliedProgram[]
+  /** 적용된 프로그램과 실제 가산율 (발효일·적용범위·상한보정 근거) */
+  applied_programs: AppliedProgram[]
   duty_rate_total: number
   /** 단위당 USD */
   duty_usd: number

@@ -1,6 +1,11 @@
 /**
  * 골든 테스트 하니스 (수용 기준 §6-1).
  *
+ * ⚠ v4 재기준화: IEEPA 는 2026-02-20 연방대법원 판결로 무효이고 02-24 종료다.
+ * rate_as_of 가 2026-07-01 이므로 프로그램 발효일에 의해 **자동으로 빠진다** —
+ * 아래 기대값은 MFN + 중국 301 만으로 다시 계산했다. 코드가 아니라 데이터가
+ * 프로그램을 끄는지 확인하는 것이 이 fixture 의 새 역할이다.
+ *
  * 지금 들어있는 10건은 스펙 검증용 수기 계산 fixture다 (아래 수치는 전부
  * 엔진 밖에서 손으로 계산한 기대값). 사용자가 실제 상품 10건(MTL 실서류)을
  * 제공하면 GOLDEN_LEDGER / GOLDEN_ITEMS / EXPECTED 만 교체해서 재사용한다.
@@ -16,6 +21,8 @@
 import { describe, expect, it } from 'vitest'
 import { computeShipment } from '../src/lib/calc/engine'
 import type { CalcItem, CalcShipment, FeeSettings, RateRow } from '../src/lib/calc/types'
+import type { ProgramContext } from '../src/lib/calc/engine'
+import type { DutyProgram } from '../src/lib/calc/programs'
 
 const FEES: FeeSettings = {
   mpf_rate: 0.003464,
@@ -25,29 +32,37 @@ const FEES: FeeSettings = {
   effective_from: '2024-10-01',
 }
 
+const PROGRAMS: DutyProgram[] = [
+  { code: 'mfn', name: 'Base MFN', authority: 'MFN', rate_type: 'additive', scope_type: 'hts_list', effective_from: '1900-01-01', effective_to: null },
+  { code: '301-china', name: 'China 301', authority: 'Section 301', rate_type: 'additive', scope_type: 'country_and_hts', effective_from: '2018-07-06', effective_to: null },
+  // 대법원 무효 판결 → 2026-02-24 종료. rate_as_of(2026-07-01) 에서 자동 제외된다.
+  { code: 'ieepa', name: 'IEEPA reciprocal', authority: 'IEEPA', rate_type: 'additive', scope_type: 'country', effective_from: '2025-04-09', effective_to: '2026-02-24' },
+]
+const CTX: ProgramContext = { programs: PROGRAMS, exclusions: [] }
+
 const GOLDEN_LEDGER: RateRow[] = [
   // base MFN
-  { hts_code: '6912004810', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.098, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '6109100004', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.165, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '3924104000', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.034, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '4202923120', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.176, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '7323930060', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.02, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '8544429090', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.026, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '9503000073', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '6302600020', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.091, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '8518302000', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.049, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '9404902000', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.06, effective_from: '2025-01-01', effective_to: null },
+  { program_code: 'mfn', hts_code: '6912004810', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.098, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '6109100004', origin_country: null, program_code: 'mfn', layer: 'base_mfn', ad_valorem_rate: 0.165, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '3924104000', origin_country: null, program_code: 'mfn', layer: 'base_mfn', ad_valorem_rate: 0.034, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '4202923120', origin_country: null, program_code: 'mfn', layer: 'base_mfn', ad_valorem_rate: 0.176, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '7323930060', origin_country: null, program_code: 'mfn', layer: 'base_mfn', ad_valorem_rate: 0.02, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '8544429090', origin_country: null, program_code: 'mfn', layer: 'base_mfn', ad_valorem_rate: 0.026, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '9503000073', origin_country: null, program_code: 'mfn', layer: 'base_mfn', ad_valorem_rate: 0, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '6302600020', origin_country: null, program_code: 'mfn', layer: 'base_mfn', ad_valorem_rate: 0.091, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '8518302000', origin_country: null, program_code: 'mfn', layer: 'base_mfn', ad_valorem_rate: 0.049, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '9404902000', origin_country: null, program_code: 'mfn', layer: 'base_mfn', ad_valorem_rate: 0.06, effective_from: '2025-01-01', effective_to: null },
   // Section 301 (CN)
-  { hts_code: '6912', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '6109', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.075, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '3924', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '4202', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '7323', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '8544', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
-  { hts_code: '8518', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '6912', origin_country: 'CN', program_code: '301-china', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '6109', origin_country: 'CN', program_code: '301-china', layer: 'section301', ad_valorem_rate: 0.075, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '3924', origin_country: 'CN', program_code: '301-china', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '4202', origin_country: 'CN', program_code: '301-china', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '7323', origin_country: 'CN', program_code: '301-china', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '8544', origin_country: 'CN', program_code: '301-china', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
+  { hts_code: '8518', origin_country: 'CN', program_code: '301-china', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2025-01-01', effective_to: null },
   // IEEPA reciprocal (국가 단위)
-  { hts_code: '*', origin_country: 'CN', layer: 'ieepa_reciprocal', ad_valorem_rate: 0.1, effective_from: '2025-04-09', effective_to: null },
-  { hts_code: '*', origin_country: 'VN', layer: 'ieepa_reciprocal', ad_valorem_rate: 0.2, effective_from: '2025-04-09', effective_to: null },
+  { hts_code: '*', origin_country: 'CN', program_code: 'ieepa', layer: 'ieepa_reciprocal', ad_valorem_rate: 0.1, effective_from: '2025-04-09', effective_to: null },
+  { hts_code: '*', origin_country: 'VN', program_code: 'ieepa', layer: 'ieepa_reciprocal', ad_valorem_rate: 0.2, effective_from: '2025-04-09', effective_to: null },
 ]
 
 const SHIP: CalcShipment = {
@@ -75,20 +90,20 @@ const GOLDEN_ITEMS: CalcItem[] = [
 
 /** 수기 계산 기대값 (엔진과 무관하게 손으로 계산) */
 const EXPECTED = [
-  { sku: 'MUG-01',      duty_rate: 0.448, duty_usd: 1.12,    landed: 3.851221,  margin: 0.553524, rec: 7.002219 },
-  { sku: 'TSHIRT-01',   duty_rate: 0.34,  duty_usd: 1.088,   landed: 4.583963,  margin: 0.620687, rec: 8.334477 },
-  { sku: 'BOTTLE-01',   duty_rate: 0.384, duty_usd: 0.6912,  landed: 2.657679,  margin: 0.583966, rec: 4.832144 },
-  { sku: 'BACKPACK-01', duty_rate: 0.526, duty_usd: 4.471,   landed: 13.757151, margin: 0.505985, rec: 25.013001 },
-  { sku: 'PAN-01',      duty_rate: 0.37,  duty_usd: 2.368,   landed: 9.359925,  margin: 0.475453, rec: 17.018046 },
-  { sku: 'CABLE-01',    duty_rate: 0.376, duty_usd: 0.3384,  landed: 1.321639,  margin: 0.684588, rec: 2.402981 },
-  { sku: 'TOY-01',      duty_rate: 0.2,   duty_usd: 0.82,    landed: 5.299202,  margin: 0.538099, rec: 9.634913 },
-  { sku: 'TOWEL-01',    duty_rate: 0.091, duty_usd: 0.2002,  landed: 2.603674,  margin: 0.676306, rec: 4.733953 },
-  { sku: 'HEADSET-01',  duty_rate: 0.399, duty_usd: 4.389,   landed: 16.406371, margin: 0.521807, rec: 29.829766 },
-  { sku: 'PILLOW-01',   duty_rate: 0.26,  duty_usd: 1.378,   landed: 7.168188,  margin: 0.524025, rec: 13.033069 },
+  { sku: 'MUG-01',      duty_rate: 0.348, duty_usd: 0.87,   landed: 3.601221,  margin: 0.572770, rec: 6.547675 },
+  { sku: 'TSHIRT-01',   duty_rate: 0.24,  duty_usd: 0.768,  landed: 4.263963,  margin: 0.636695, rec: 7.752660 },
+  { sku: 'BOTTLE-01',   duty_rate: 0.284, duty_usd: 0.5112, landed: 2.477679,  margin: 0.601984, rec: 4.504871 },
+  { sku: 'BACKPACK-01', duty_rate: 0.426, duty_usd: 3.621,  landed: 12.907151, margin: 0.527241, rec: 23.467547 },
+  { sku: 'PAN-01',      duty_rate: 0.27,  duty_usd: 1.728,  landed: 8.719925,  margin: 0.501063, rec: 15.854409 },
+  { sku: 'CABLE-01',    duty_rate: 0.276, duty_usd: 0.2484, landed: 1.231639,  margin: 0.695853, rec: 2.239344 },
+  { sku: 'TOY-01',      duty_rate: 0,     duty_usd: 0,      landed: 4.479202,  margin: 0.586363, rec: 8.144004 },
+  { sku: 'TOWEL-01',    duty_rate: 0.091, duty_usd: 0.2002, landed: 2.603674,  margin: 0.676306, rec: 4.733953 },
+  { sku: 'HEADSET-01',  duty_rate: 0.299, duty_usd: 3.289,  landed: 15.306371, margin: 0.543811, rec: 27.829765 },
+  { sku: 'PILLOW-01',   duty_rate: 0.06,  duty_usd: 0.318,  landed: 6.108188,  margin: 0.572229, rec: 11.105796 },
 ]
 
 describe('골든 테스트 — 10건 수기 계산 대조 (§6-1)', () => {
-  const result = computeShipment(SHIP, GOLDEN_ITEMS, GOLDEN_LEDGER, FEES)
+  const result = computeShipment(SHIP, GOLDEN_ITEMS, GOLDEN_LEDGER, FEES, CTX)
 
   it('선적 총계', () => {
     expect(result.totals.total_value).toBeCloseTo(23925, 6)
@@ -105,13 +120,23 @@ describe('골든 테스트 — 10건 수기 계산 대조 (§6-1)', () => {
       expect(r.landed_cost).toBeCloseTo(exp.landed, 4)
       expect(r.true_margin!).toBeCloseTo(exp.margin, 4)
       expect(r.recommended_price!).toBeCloseTo(exp.rec, 4)
-      expect(r.warnings).toEqual([])
+      // 원장에 없는 프로그램은 "미확인" 경고가 남는다 — 조용한 0 금지
+      expect(r.warnings.filter((w) => !w.includes('not confirmed'))).toEqual([])
     })
   }
 
-  it('레이어 내역이 리포트에 표기 가능해야 함 (예: MUG = MFN+301+IEEPA)', () => {
+  it('적용 프로그램이 리포트에 표기 가능해야 함 (MUG = MFN + 중국301)', () => {
     const mug = result.items.find((x) => x.sku === 'MUG-01')!
-    const layers = Object.fromEntries(mug.duty_layers.map((l) => [l.layer, l.rate]))
-    expect(layers).toEqual({ base_mfn: 0.098, section301: 0.25, ieepa_reciprocal: 0.1 })
+    const byCode = Object.fromEntries(mug.applied_programs.map((a) => [a.program_code, a.applied_rate]))
+    expect(byCode).toEqual({ mfn: 0.098, '301-china': 0.25 })
+  })
+
+  it('IEEPA 는 원장에 행이 있어도 발효일 때문에 적용되지 않는다', () => {
+    // 코드에 IEEPA 를 언급하는 분기가 없다 — 데이터(effective_to)만으로 꺼진다
+    const hasIeepaRow = GOLDEN_LEDGER.some((r) => r.program_code === 'ieepa')
+    expect(hasIeepaRow).toBe(true)
+    for (const r of result.items) {
+      expect(r.applied_programs.some((a) => a.program_code === 'ieepa')).toBe(false)
+    }
   })
 })

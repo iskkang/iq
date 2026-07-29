@@ -18,6 +18,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import Papa from 'papaparse'
 import { computeShipment, dutyBreakdownLabel } from '../src/lib/calc/engine'
+import type { ProgramContext } from '../src/lib/calc/engine'
+import type { DutyProgram } from '../src/lib/calc/programs'
 import { round2, round4 } from '../src/lib/calc/money'
 import { formatHts } from '../src/lib/calc/rates'
 import type { CalcItem, FeeSettings, RateLayer, RateRow } from '../src/lib/calc/types'
@@ -73,6 +75,7 @@ const LEDGER: RateRow[] = Papa.parse<Record<string, string>>(seedCsv, {
   header: true,
   skipEmptyLines: true,
 }).data.map((r) => ({
+  program_code: r.program_code?.trim() || null,
   hts_code: r.hts_code.trim(),
   origin_country: r.origin_country?.trim() ? r.origin_country.trim().toUpperCase() : null,
   layer: r.layer.trim() as RateLayer,
@@ -80,6 +83,29 @@ const LEDGER: RateRow[] = Papa.parse<Record<string, string>>(seedCsv, {
   effective_from: r.effective_from.trim(),
   effective_to: r.effective_to?.trim() ? r.effective_to.trim() : null,
 }))
+
+/** 시드 프로그램 로드 (엔진 단일 경로 — ProgramContext 필수) */
+function loadProgramCtx(): ProgramContext {
+  const csv = readFileSync(join(root, 'supabase/seed/duty_programs.csv'), 'utf-8')
+  const parsed = Papa.parse<Record<string, string>>(csv, { header: true, skipEmptyLines: true })
+  const programs: DutyProgram[] = parsed.data
+    .filter((r) => r.code?.trim())
+    .map((r) => ({
+      code: r.code.trim(),
+      name: r.name?.trim() ?? r.code.trim(),
+      authority: r.authority?.trim() ?? '',
+      rate_type: (r.rate_type?.trim() || 'additive') as DutyProgram['rate_type'],
+      scope_type: (r.scope_type?.trim() || 'country_and_hts') as DutyProgram['scope_type'],
+      effective_from: r.effective_from.trim(),
+      effective_to: r.effective_to?.trim() ? r.effective_to.trim() : null,
+      source: r.source?.trim() || null,
+      note: r.note?.trim() || null,
+    }))
+  return { programs, exclusions: [] }
+}
+
+const PROGRAM_CTX = loadProgramCtx()
+
 const FEES: FeeSettings = {
   mpf_rate: 0.003464,
   mpf_min_usd: 32.71,
@@ -235,7 +261,7 @@ async function main() {
 
   const result = computeShipment(
     { freight_usd: 8000, insurance_usd: 300, mode: 'ocean', allocation_basis: 'value', target_margin: 0.3, channel_fee_pct: 0.15, rate_as_of: '2026-07-29' },
-    calcItems, LEDGER, FEES,
+    calcItems, LEDGER, FEES, PROGRAM_CTX,
   )
   const t3 = performance.now()
 
