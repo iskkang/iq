@@ -23,8 +23,11 @@
       // 이메일은 자체 DB(leads 테이블, RLS insert 전용)로 들어간다.
       // 아래 두 값은 공개용이다 — publishable 키는 앱 번들에도 이미 실려 있고,
       // leads 는 select 정책이 없어 이 키로 읽을 수 없다.
-      SUPABASE_URL: 'https://hwcfjxwdmmlydnrfyjqk.supabase.co',
-      SUPABASE_ANON_KEY: 'sb_publishable_UdPyuqjon43B2htgbfkofg_ildGExbo',
+      // 앱 번들과 **같은 출처**를 쓴다. 예전에는 여기에 키를 하드코딩해서 랜딩과
+      // 앱이 서로 다른 anon 키를 쓰고 있었다. Vite 가 빌드 시 %VITE_*% 를 치환한다.
+      // 치환이 안 되면 saveLead 가 즉시 실패한다 — 조용히 이메일을 잃지 않도록.
+      SUPABASE_URL: '%VITE_SUPABASE_URL%',
+      SUPABASE_ANON_KEY: '%VITE_SUPABASE_ANON_KEY%',
       VARIANTS: {
         a: { // Angle A: 관세 격변 → 마진 불안 (fear)
           headline: 'Tariffs changed again.\nDo you still know your real margin?',
@@ -65,6 +68,10 @@
     <form class="signup-form mx-auto mt-8 flex max-w-md flex-col gap-2 sm:flex-row" data-intent="hero">
       <input type="email" name="email" required placeholder="you@yourstore.com"
         class="w-full flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:outline-none" />
+      <!-- 봇 함정: 사람에게는 보이지 않는다. 채워져 오면 제출을 버린다.
+           광고 트래픽에서 봇 가입이 섞이면 전환율 자체를 못 믿게 된다. -->
+      <input type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true"
+        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
       <button type="submit"
         class="rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-sm hover:bg-indigo-700">
         Get early access
@@ -180,6 +187,8 @@
         <form id="sample-form" class="mx-auto flex max-w-md flex-col gap-2 sm:flex-row">
           <input type="email" name="email" required placeholder="you@yourstore.com"
             class="w-full flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:outline-none" />
+          <input type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true"
+            style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
           <button type="submit"
             class="whitespace-nowrap rounded-lg border border-indigo-300 bg-white px-5 py-3 text-base font-semibold text-indigo-700 hover:bg-indigo-50">
             See a sample report →
@@ -254,6 +263,10 @@
     <form class="signup-form mx-auto mt-6 flex max-w-md flex-col gap-2 sm:flex-row" data-intent="footer">
       <input type="email" name="email" required placeholder="you@yourstore.com"
         class="w-full flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:outline-none" />
+      <!-- 봇 함정: 사람에게는 보이지 않는다. 채워져 오면 제출을 버린다.
+           광고 트래픽에서 봇 가입이 섞이면 전환율 자체를 못 믿게 된다. -->
+      <input type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true"
+        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
       <button type="submit"
         class="rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-sm hover:bg-indigo-700">
         Get early access
@@ -288,7 +301,24 @@
     // 통과시키려면 anon 에게 UPDATE 정책을 열어야 하는데, 그러면 남의 행을
     // 덮어쓸 수 있다. 중복은 409 를 성공으로 취급해 해결한다
     // (unique(email, intent) — 같은 주소가 같은 경로로 다시 눌러도 에러가 아니다).
+    /** 가입 완료 표시 (정상 제출과 honeypot 경로가 같은 화면을 본다) */
+    function showJoined(form) {
+      const done = document.createElement('p')
+      done.className = 'rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-emerald-800 font-medium'
+      done.textContent = "You're in line — we're onboarding new stores this week"
+      const note = form.closest('section')?.querySelector('.form-note')
+      form.replaceWith(done)
+      note?.remove()
+    }
+
+    /** 빌드 시 %VITE_*% 가 치환되지 않았는가 (Vercel env 누락) */
+    function configMissing() {
+      return !CONFIG.SUPABASE_URL || CONFIG.SUPABASE_URL.indexOf('%VITE_') === 0
+        || !CONFIG.SUPABASE_ANON_KEY || CONFIG.SUPABASE_ANON_KEY.indexOf('%VITE_') === 0
+    }
+
     async function saveLead(fields) {
+      if (configMissing()) throw new Error('Supabase env not injected at build time')
       const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/leads`, {
         method: 'POST',
         headers: {
@@ -332,6 +362,12 @@
         btn.disabled = true
         btn.textContent = 'Joining…'
         const data = Object.fromEntries(new FormData(form).entries())
+        // 봇 함정. 사람은 보이지 않는 필드를 채우지 않는다. 채워져 있으면
+        // 아무것도 보내지 않되 성공 화면을 보여준다 — 실패를 알려주면 우회법을 알려주는 셈이다.
+        if (data.company) {
+          showJoined(form)
+          return
+        }
         try {
           await saveLead({
             email: data.email,
@@ -348,12 +384,7 @@
           window.plausible?.('email_signup', {
             props: { variant, intent: data.intent, utm_source: utm.utm_source, utm_campaign: utm.utm_campaign },
           })
-          const done = document.createElement('p')
-          done.className = 'rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-emerald-800 font-medium'
-          done.textContent = "You're in line — we're onboarding new stores this week"
-          const note = form.closest('section')?.querySelector('.form-note')
-          form.replaceWith(done)
-          note?.remove()
+          showJoined(form)
         } catch (err) {
           btn.disabled = false
           btn.textContent = 'Get early access'
@@ -377,6 +408,8 @@
       const note = document.getElementById('sample-note')
       const email = form.querySelector('input[type=email]').value
       const btn = form.querySelector('button[type=submit]')
+      const trap = form.querySelector('input[name=company]')
+      const isBot = !!(trap && trap.value)
 
       btn.disabled = true
       const opened = window.open('/sample-report.html', '_blank', 'noopener')
@@ -386,6 +419,7 @@
 
       const params = new URLSearchParams(location.search)
       try {
+        if (isBot) return // 함정에 걸림 — 리포트는 이미 열어줬으니 조용히 수집만 건너뛴다
         await saveLead({
           email,
           intent: 'sample_report',
