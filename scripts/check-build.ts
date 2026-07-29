@@ -33,12 +33,20 @@ for (const f of ['dist/index.html', 'dist/privacy.html', 'dist/app/index.html'])
 }
 
 // ── 2. 남아 있으면 안 되는 플레이스홀더 ────────────────────────────
-const PLACEHOLDERS = ['YOUR_FORMSPREE_ID', 'YOUR_DOMAIN.com', 'YOUR_PROJECT', '<project-ref>']
+const PLACEHOLDERS = ['YOUR_FORMSPREE_ID', 'YOUR_DOMAIN.com', 'YOUR_PROJECT', '<project-ref>', '[서울 주소']
+
+// 도메인 이전 후 남으면 안 되는 것. 하나라도 남으면 Plausible 은 엉뚱한 사이트로
+// 집계하고, 구 이메일은 심사·문의를 받지 못하는 곳으로 보낸다.
+const STALE = ['iq-rose.vercel.app', 'metalogislab@gmail.com']
+
 for (const f of ['dist/index.html', 'dist/privacy.html']) {
   const html = read(f)
   if (html === null) continue
   for (const ph of PLACEHOLDERS) {
     if (html.includes(ph)) fail.push(`${f}: 치환되지 않은 플레이스홀더 "${ph}"`)
+  }
+  for (const st of STALE) {
+    if (html.includes(st)) fail.push(`${f}: 구 도메인/연락처 "${st}" 가 남아 있다`)
   }
 }
 

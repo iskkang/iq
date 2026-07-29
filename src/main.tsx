@@ -23,8 +23,8 @@ function ConfigError({ message }: { message: string }) {
         <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 font-mono text-xs text-slate-600">{message}</p>
         <p className="mt-3 text-sm text-slate-600">
           잠시 후 다시 시도해 주세요. 계속되면{' '}
-          <a href="mailto:metalogislab@gmail.com" className="font-medium text-indigo-600 underline">
-            metalogislab@gmail.com
+          <a href="mailto:support@landediq.app" className="font-medium text-indigo-600 underline">
+            support@landediq.app
           </a>{' '}
           으로 알려주시면 바로 확인하겠습니다.
         </p>
