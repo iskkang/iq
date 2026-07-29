@@ -406,6 +406,7 @@ function loadProgramCtx(): ProgramContext {
       authority: r.authority?.trim() ?? '',
       rate_type: (r.rate_type?.trim() || 'additive') as DutyProgram['rate_type'],
       scope_type: (r.scope_type?.trim() || 'country_and_hts') as DutyProgram['scope_type'],
+      coverage: (r.coverage?.trim() || 'partial') as DutyProgram['coverage'],
       effective_from: r.effective_from.trim(),
       effective_to: r.effective_to?.trim() ? r.effective_to.trim() : null,
       source: r.source?.trim() || null,
@@ -416,10 +417,54 @@ function loadProgramCtx(): ProgramContext {
 
 const PROGRAM_CTX = loadProgramCtx()
 const SEED_LAYERS = loadLedger('supabase/seed/hts_seed_50.csv').filter((r) => r.program_code !== 'mfn')
+
+/**
+ * 중국 301 리스트 원장 — data/section301_lists.json 에서 직접 만든다.
+ *
+ * DB 적재(seed:301)와 **같은 소스 한 벌**을 쓴다. CSV 로 한 번 더 옮겨 적으면
+ * 두 벌이 되고, 이 저장소는 이미 그것 때문에 실패한 적이 있다.
+ */
+function loadChina301(): RateRow[] {
+  const f = join(root, 'data/section301_lists.json')
+  if (!existsSync(f)) return []
+  const d = JSON.parse(readFileSync(f, 'utf-8')) as {
+    lists: Array<{ list: string; provision: string; rate: number; active: boolean; codes: string[]; citation: string }>
+    review_2024_excluded: string[]
+  }
+  const PROG: Record<string, [string, string]> = {
+    list1: ['301-china-list1', '2018-07-06'],
+    list2: ['301-china-list2', '2018-08-23'],
+    list3: ['301-china-list3', '2019-05-10'],
+    list4a: ['301-china-list4a', '2020-02-14'],
+  }
+  // USITC_MFN 은 아래에서 초기화되므로 여기서 참조하면 순서 문제가 난다.
+  // 카탈로그 파일을 직접 읽어 8자리 실존 여부만 본다.
+  const catFile = join(root, 'data/hts_lines.json')
+  const cat = new Set<string>(
+    existsSync(catFile)
+      ? (JSON.parse(readFileSync(catFile, 'utf-8')) as Array<{ code: string }>).map((l) => l.code.slice(0, 8))
+      : [],
+  )
+  const out: RateRow[] = []
+  for (const L of d.lists) {
+    if (!L.active) continue // List 4B 는 원문이 정지시켰다 — 부재가 곧 확인된 0%
+    const [code, from] = PROG[L.list]
+    for (const c of L.codes) {
+      if (!cat.has(c)) continue
+      out.push({
+        program_code: code, hts_code: c, origin_country: 'CN', layer: 'section301',
+        ad_valorem_rate: L.rate, effective_from: from, effective_to: null,
+        source: L.citation, note: `${L.list} · ${L.provision}`,
+      } as RateRow)
+    }
+  }
+  return out
+}
+const CHINA_301 = loadChina301()
 const USITC_MFN = loadUsitcBaseMfn()
-const LEDGER: RateRow[] = [...USITC_MFN, ...SEED_LAYERS]
+const LEDGER: RateRow[] = [...USITC_MFN, ...SEED_LAYERS, ...CHINA_301]
 const BASE_LEDGER = USITC_MFN
-const SUPPLEMENT = SEED_LAYERS
+const SUPPLEMENT = [...SEED_LAYERS, ...CHINA_301]
 
 
 const UNVERIFIED = new Set(
@@ -603,9 +648,11 @@ async function main() {
   // 중국 301(Lists 1-4A)은 중국산 전용이다. 2026-07-24 시행 강제노동 301 은
   // 국가 단위로 60개 경제권에 붙으므로 비중국산에 있어도 위반이 아니다 —
   // 프로그램을 구분하지 않으면 이 검사가 오탐한다.
-  const CHINA_ONLY_PROGRAM = '301-china-legacy'
+  // 중국 리스트 프로그램은 전부 CN 전용이다. 강제노동 301 은 국가 단위로 60개
+  // 경제권에 붙으므로 비중국산에 있어도 위반이 아니다 — 구분하지 않으면 오탐한다.
+  const CHINA_ONLY_PROGRAMS = ['301-china-list1', '301-china-list2', '301-china-list3', '301-china-list4a']
   const chinaOnlyRate = (r: SkuResult) =>
-    r.applied_programs.filter((a) => a.program_code === CHINA_ONLY_PROGRAM).reduce((s, a) => s + a.applied_rate, 0)
+    r.applied_programs.filter((a) => CHINA_ONLY_PROGRAMS.includes(a.program_code)).reduce((s, a) => s + a.applied_rate, 0)
 
   const originViolations: string[] = []
   for (const res of [resultA, resultB]) {
@@ -744,7 +791,7 @@ async function main() {
   }
   p('| §검증1 정답 확정 | **미완** | 계획서가 요구한 CBP CROSS 판례 확인을 수행하지 않았다. 아래 정답은 계획서의 잠정값(BRD-01 은 v2 정정본)이며 **최종 채점 전 CROSS 확인 필요**. |')
   p(
-    `| §검증2-1·2 세율 대조 | **부분 통과** | base MFN ${BASE_LEDGER.length.toLocaleString()}행은 USITC 공식 export 에서 직접 적재해 대조가 끝났다 (스펙 §4 허용 경로). **Section 301·IEEPA ${SUPPLEMENT.length}행은 여전히 SAMPLE** — 관리자 수기 확정 전까지 duty 총액은 신뢰할 수 없다. |`,
+    `| §검증2-1·2 세율 대조 | **부분 통과** | base MFN ${BASE_LEDGER.length.toLocaleString()}행은 USITC 공식 export 에서 직접 적재해 대조가 끝났다 (스펙 §4 허용 경로). **Section 301·IEEPA ${SUPPLEMENT.length}행** 중 중국 리스트 ${CHINA_301.length}행은 HTSUS note 20 인용을 갖고, 나머지 ${SEED_LAYERS.length}행은 여전히 SAMPLE — 관리자 수기 확정 전까지 duty 총액은 신뢰할 수 없다. |`,
   )
   p('| §검증2-3 계산 재검증 | **집행됨 ✅** | 결정론 코드라 여기서 나온 숫자는 그대로 신뢰 가능. 아래 수식 대입값으로 엑셀 대조하면 된다. |')
   p('| §검증2-4 원산지 스코핑 | **집행됨 ✅** | 아래 assert 결과 참조. |')
@@ -786,7 +833,7 @@ async function main() {
   p(`| 분류 소요 | ${classifyMs.toFixed(1)} ms |`)
   p(`| 자동확정 규칙 | k=${VOTES} 만장일치 AND 원장 base MFN 실존 (confidence 는 참고 표기로 강등) |`)
   p(`| temperature | ${TEMPERATURE} |`)
-  p(`| 원장 행 수 | ${LEDGER.length.toLocaleString()} (USITC base MFN ${BASE_LEDGER.length.toLocaleString()} + 301·IEEPA SAMPLE ${SUPPLEMENT.length}) |`)
+  p(`| 원장 행 수 | ${LEDGER.length.toLocaleString()} (USITC base MFN ${BASE_LEDGER.length.toLocaleString()} + 301·IEEPA ${SUPPLEMENT.length} (중국 리스트 ${CHINA_301.length} 인용확보)) |`)
   p(`| rate 기준일 | ${SHIP.rate_as_of} |`)
   p(`| 운임 + 보험 | $${SHIP.freight_usd.toLocaleString()} + $${SHIP.insurance_usd} = **$${(SHIP.freight_usd + SHIP.insurance_usd).toLocaleString()}** |`)
   p(`| 운송 모드 / 배부 기준 | ${SHIP.mode} / ${resultB.totals.allocation_basis_used} |`)

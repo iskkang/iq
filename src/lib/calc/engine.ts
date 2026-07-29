@@ -127,7 +127,9 @@ export function computeShipment(
           const ro = r.origin_country ? r.origin_country.trim().toUpperCase() : null
           return ro === null || ro === org
         })
-        if (reachable) {
+        // 열거가 완결된 프로그램은 부재 자체가 정보다 — 중국 301 리스트에 없는
+        // 라인은 "미확인"이 아니라 "확인된 0%"다 (예: 정지된 List 4B 만 걸린 라인).
+        if (reachable && p.coverage !== 'enumerated') {
           warnings.push(
             `${p.authority} (${p.code}) not confirmed for this HTS — treated as 0%, duty may be understated`,
           )
@@ -137,6 +139,16 @@ export function computeShipment(
         if (a.excluded) {
           warnings.push(`${a.authority} (${a.program_code}) is excluded for this HTS — treated as 0%`)
         }
+      }
+      // 매칭은 됐지만 근거가 확정되지 않은 행 — 조용히 0 으로 통과시키지 않는다.
+      // (2024 4년 재검토 인상 라인, note 의 8자리가 현행에서 재편된 라인)
+      for (const r of ledger) {
+        if (!r.source || !r.source.startsWith('UNVERIFIED')) continue
+        if (r.origin_country && r.origin_country.trim().toUpperCase() !== org) continue
+        if (!hts.startsWith(r.hts_code)) continue
+        warnings.push(
+          `Section 301 scope unresolved for this HTS (${r.source}) — treated as 0%, duty may be understated`,
+        )
       }
     }
 

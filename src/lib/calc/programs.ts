@@ -25,6 +25,14 @@ export interface DutyProgram {
    */
   rate_type: RateType
   scope_type: ScopeType
+  /**
+   * 적용 대상이 원문에 전량 열거됐는가.
+   *   enumerated : 부재 = 확인된 0% (경고하지 않는다)
+   *   partial    : 부재 = 미확인 (경고한다)
+   * 중국 301 리스트를 전량 적재하면 목록에 없는 중국산이 대부분인데, 그때마다
+   * 경고를 내면 정작 중요한 신호가 묻힌다. 기본은 안전한 쪽인 partial 이다.
+   */
+  coverage?: 'enumerated' | 'partial'
   effective_from: string
   effective_to: string | null
   source?: string | null

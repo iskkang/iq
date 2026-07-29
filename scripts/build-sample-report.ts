@@ -26,16 +26,19 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const AS_OF = '2026-07-29'
 
 /**
- * 확인된 프로그램만 (MFN + 2026-07-24 시행 강제노동 301).
+ * 확인된 프로그램만 (MFN + 중국 리스트 301 + 2026-07-24 시행 강제노동 301).
  *
- * **샘플에 중국산을 쓰지 않는다.** 중국은 레거시 301(List 1~4, 최대 25%)이 추가로 붙는데
- * 그 8자리 목록이 아직 원장에 없다. 중국산으로 샘플을 만들면 지배적인 레이어가 통째로
- * 빠져 실제 관세를 절반 이하로 표시하게 된다 — "확인된 것만 보여준다"가 아니라 오답이다.
- * 베트남·인도는 강제노동 301 만으로 오늘 기준 완결이라 샘플로 안전하고,
- * China+1 로 소싱을 옮긴 셀러가 타깃이라 오히려 더 적합하다.
+ * **중국산으로 돌아왔다.** 레거시 301 리스트(HTSUS note 20 8자리 열거)를 적재했으므로
+ * 이제 중국 관세를 완결로 표시할 수 있다. 리스트별로 결과가 갈리는 것이 핵심이다:
+ *   4202.92.31 백팩   List 3  +25%   → MFN 17.6% + 25% + 12.5% = 55.1% (3층)
+ *   6109.10.00 티셔츠 List 4A +7.5%  → MFN 16.5% + 7.5% + 12.5% = 36.5%
+ *   6912.00.44 머그   List 4B 정지   → MFN 10% + 12.5% = 22.5% (301 리스트 없음)
+ * 같은 중국산인데 8자리에 따라 22.5%~55.1% 로 갈린다 — 이 제품이 파는 지점이다.
  */
 const PROGRAMS: DutyProgram[] = [
-  { code: 'mfn', name: 'Base MFN', authority: 'MFN', rate_type: 'additive', scope_type: 'hts_list', effective_from: '1900-01-01', effective_to: null },
+  { code: 'mfn', name: 'Base MFN', authority: 'MFN', rate_type: 'additive', scope_type: 'hts_list', coverage: 'enumerated', effective_from: '1900-01-01', effective_to: null },
+  { code: '301-china-list3', name: 'Section 301 — China List 3', authority: 'Section 301', rate_type: 'additive', scope_type: 'country_and_hts', coverage: 'enumerated', effective_from: '2019-05-10', effective_to: null },
+  { code: '301-china-list4a', name: 'Section 301 — China List 4A', authority: 'Section 301', rate_type: 'additive', scope_type: 'country_and_hts', coverage: 'enumerated', effective_from: '2020-02-14', effective_to: null },
   { code: '301-fl', name: 'Section 301 (forced labor)', authority: 'Section 301', rate_type: 'additive', scope_type: 'country', effective_from: '2026-07-24', effective_to: null },
 ]
 const CTX: ProgramContext = { programs: PROGRAMS, exclusions: [] }
@@ -46,7 +49,11 @@ const LEDGER: RateRow[] = [
   { program_code: 'mfn', hts_code: '7323930060', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.02, effective_from: '2025-01-01', effective_to: null },
   { program_code: 'mfn', hts_code: '6109100012', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.165, effective_from: '2025-01-01', effective_to: null },
   { program_code: 'mfn', hts_code: '9617001000', origin_country: null, layer: 'base_mfn', ad_valorem_rate: 0.072, effective_from: '2025-01-01', effective_to: null },
+  { program_code: '301-fl', hts_code: '*', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.125, effective_from: '2026-07-24', effective_to: null },
   { program_code: '301-fl', hts_code: '*', origin_country: 'VN', layer: 'section301', ad_valorem_rate: 0.125, effective_from: '2026-07-24', effective_to: null },
+  // 중국 리스트 301 — HTSUS note 20 열거. 4B(정지) 라인은 넣지 않는다: 부재가 곧 확인된 0%
+  { program_code: '301-china-list3', hts_code: '42029231', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.25, effective_from: '2019-05-10', effective_to: null },
+  { program_code: '301-china-list4a', hts_code: '61091000', origin_country: 'CN', layer: 'section301', ad_valorem_rate: 0.075, effective_from: '2020-02-14', effective_to: null },
   { program_code: '301-fl', hts_code: '*', origin_country: 'IN', layer: 'section301', ad_valorem_rate: 0.10, effective_from: '2026-07-24', effective_to: null },
 ]
 
@@ -57,11 +64,11 @@ const SHIP: CalcShipment = {
 }
 
 const ITEMS: CalcItem[] = [
-  { sku: 'MUG-01',      hts_code: '6912004400', unit_cost_usd: 2.5,  origin_country: 'VN', units_per_shipment: 1000, current_price_usd: 12.99 },
-  { sku: 'BACKPACK-01', hts_code: '4202923120', unit_cost_usd: 8.5,  origin_country: 'VN', units_per_shipment: 400,  current_price_usd: 39.99 },
-  { sku: 'PAN-01',      hts_code: '7323930060', unit_cost_usd: 6.4,  origin_country: 'VN', units_per_shipment: 300,  current_price_usd: 24.99 },
-  { sku: 'TSHIRT-01',   hts_code: '6109100012', unit_cost_usd: 3.2,  origin_country: 'IN', units_per_shipment: 800,  current_price_usd: 19.99 },
-  { sku: 'TUMBLER-01',  hts_code: '9617001000', unit_cost_usd: 3.1,  origin_country: 'VN', units_per_shipment: 600,  current_price_usd: 24.99 },
+  { sku: 'MUG-01',      hts_code: '6912004400', unit_cost_usd: 2.5,  origin_country: 'CN', units_per_shipment: 1000, current_price_usd: 12.99 },
+  { sku: 'BACKPACK-01', hts_code: '4202923120', unit_cost_usd: 8.5,  origin_country: 'CN', units_per_shipment: 400,  current_price_usd: 39.99 },
+  { sku: 'PAN-01',      hts_code: '7323930060', unit_cost_usd: 6.4,  origin_country: 'CN', units_per_shipment: 300,  current_price_usd: 24.99 },
+  { sku: 'TSHIRT-01',   hts_code: '6109100012', unit_cost_usd: 3.2,  origin_country: 'CN', units_per_shipment: 800,  current_price_usd: 19.99 },
+  { sku: 'TUMBLER-01',  hts_code: '9617001000', unit_cost_usd: 3.1,  origin_country: 'CN', units_per_shipment: 600,  current_price_usd: 24.99 },
 ]
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
@@ -176,9 +183,11 @@ ${rows}
   <p class="note"><b>Duty programs shown:</b> base MFN (USITC official schedule) and the Section 301 forced-labor
   tariffs effective 2026-07-24. Programs that have ended — the IEEPA tariffs struck down in February 2026 and the
   Section 122 surcharge that expired 2026-07-24 — are excluded automatically by their effective dates.
-  This sample uses Vietnam and India origin, where those two programs are the complete picture. China-origin goods
-  can carry an additional legacy Section 301 duty (Lists 1&ndash;4) that depends on the 8-digit code; LandedIQ flags
-  those lines as <b>unverified</b> rather than showing them as 0%.</p>
+  All five SKUs are China origin. The Section 301 result differs by 8-digit line, which is the point:
+  backpacks (4202.92.31) are on List 3 at +25%, t-shirts (6109.10.00) on List 4A at +7.5%, while mugs
+  (6912.00.44), stainless kitchenware (7323.93.00) and vacuum flasks (9617.00.10) appear only on
+  List&nbsp;4B &mdash; which the tariff schedule itself marks <b>suspended</b>, so no China 301 applies.
+  Same country, same shipment: 22.5% to 55.1% depending on the 8-digit code.</p>
 
   <footer>
     ${esc(DISCLAIMER_EN)}<br />

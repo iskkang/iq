@@ -49,16 +49,6 @@ mfn,9403608081,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verif
 mfn,9404902000,,base_mfn,0.06,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
 mfn,9503000073,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
 mfn,9505102500,,base_mfn,0,2025-01-01,,USITC HTS snapshot,Test seed — re-verify at hts.usitc.gov before production
-301-china-legacy,3924,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-301-china-legacy,4202,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-301-china-legacy,6109,CN,section301,0.075,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-301-china-legacy,6302,CN,section301,0.075,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-301-china-legacy,6912,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-301-china-legacy,7323,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-301-china-legacy,8414,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-301-china-legacy,8518,CN,section301,0.075,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-301-china-legacy,8544,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
-301-china-legacy,9403,CN,section301,0.25,2025-01-01,,SAMPLE,SAMPLE value — admin must confirm manually (no auto-scraping policy)
 ieepa-reciprocal,*,CN,ieepa_reciprocal,0.1,2025-04-09,,SAMPLE,SAMPLE value — country-level layer
 ieepa-reciprocal,*,VN,ieepa_reciprocal,0.2,2025-04-09,,SAMPLE,SAMPLE value — country-level layer
 301-forced-labor,*,CN,section301,0.125,2026-07-24,,USTR forced-labor 301 eff. 2026-07-24,2차 자료 교차확인 (Baker McKenzie/Morgan Lewis/Honigman/CV Intl) — USTR annex 원문 대조 필요
