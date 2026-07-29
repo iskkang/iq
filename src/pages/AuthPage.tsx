@@ -45,8 +45,8 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
         {demo ? (
           <>
             <p className="mb-4 rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
-              Running in <b>demo mode</b> (no Supabase env configured). Continue with any email —
-              data lives in browser memory only.
+              Try it with any email — no password, nothing to install. Your work stays in this
+              browser tab until you create an account.
             </p>
             <form onSubmit={submit} className="space-y-3">
               <input
@@ -60,7 +60,7 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
                 disabled={busy}
                 className="w-full rounded-md bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
               >
-                Start demo
+                Try it now
               </button>
             </form>
           </>

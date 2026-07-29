@@ -1,10 +1,9 @@
 {
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/a", "destination": "/index.html" },
-    { "source": "/b", "destination": "/index.html" },
-    { "source": "/c", "destination": "/index.html" },
-    { "source": "/app", "destination": "/app/index.html" },
-    { "source": "/app/(.*)", "destination": "/app/index.html" }
+    { "source": "/a", "destination": "/" },
+    { "source": "/b", "destination": "/" },
+    { "source": "/c", "destination": "/" },
+    { "source": "/app/(.*)", "destination": "/app" }
   ]
 }

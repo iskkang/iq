@@ -21,8 +21,11 @@ export function Layout({
             <span className="rounded-md bg-indigo-600 px-2 py-1 text-sm font-bold text-white">LIQ</span>
             <span className="text-lg font-semibold tracking-tight">LandedIQ</span>
             {demo && (
-              <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                DEMO MODE — data resets on refresh
+              <span
+                className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                title="Create an account to keep your shipments"
+              >
+                Trial — not saved
               </span>
             )}
           </Link>

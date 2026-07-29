@@ -172,10 +172,15 @@
         </table>
       </div>
       <div class="mt-6 text-center">
-        <button id="sample-btn" class="rounded-lg border border-indigo-300 bg-white px-5 py-3 text-base font-semibold text-indigo-700 hover:bg-indigo-50">
-          See a sample report →
-        </button>
-        <p class="mt-2 text-xs text-slate-400">We'll email you the full sample report</p>
+        <form id="sample-form" class="mx-auto flex max-w-md flex-col gap-2 sm:flex-row">
+          <input type="email" name="email" required placeholder="you@yourstore.com"
+            class="w-full flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:outline-none" />
+          <button type="submit"
+            class="whitespace-nowrap rounded-lg border border-indigo-300 bg-white px-5 py-3 text-base font-semibold text-indigo-700 hover:bg-indigo-50">
+            See a sample report →
+          </button>
+        </form>
+        <p id="sample-note" class="mt-2 text-xs text-slate-400">Opens immediately — no waiting for an email</p>
       </div>
     </div>
   </section>
@@ -256,6 +261,16 @@
   <footer class="border-t border-slate-200 bg-white">
     <div class="mx-auto max-w-3xl px-5 py-8 text-center text-xs text-slate-400">
       <p>Estimates only — not customs, legal, or tax advice. Final HTS classification and duty liability are the responsibility of the importer of record.</p>
+
+      <!-- ═══ 사업자 정보 — Google Ads 심사 요건. 값을 채운 뒤 hidden 을 제거하세요. ═══
+           심사에서 광고주 신원·연락처 확인을 요구합니다. 최소 상호 + 연락 이메일,
+           가능하면 사업장 주소까지 있어야 반려 위험이 줄어듭니다. -->
+      <address id="business-info" hidden class="mt-3 not-italic leading-relaxed">
+        <span id="biz-name"><!-- TODO: 상호 (사업자등록증 상 명칭) --></span><br />
+        <span id="biz-address"><!-- TODO: 사업장 주소 --></span><br />
+        <a id="biz-email" href="mailto:"><!-- TODO: 연락 이메일 --></a>
+      </address>
+
       <p class="mt-2">© 2026 LandedIQ · <a href="/privacy" class="underline hover:text-slate-600">Privacy</a></p>
     </div>
   </footer>
@@ -321,16 +336,39 @@
       })
     })
 
-    // ── "See a sample report" → 같은 이메일 게이트 (intent 변경 + 스크롤/포커스) ──
-    document.getElementById('sample-btn')?.addEventListener('click', () => {
-      const form = document.querySelector('.signup-form') // hero form (제출 후엔 footer form으로)
-      const target = form ?? document.querySelector('#signup, footer')
-      if (form) {
-        form.querySelector('input[name=intent]').value = 'sample_report'
-        form.querySelector('button[type=submit]').textContent = 'Email me the sample report'
+    // ── "See a sample report" → 이메일 수집 후 **즉시** 샘플 열람 ──
+    // 이메일 발송 인프라가 아직 없다. 기다리게 만들지 말고 바로 보여주되,
+    // 주소는 (Formspree 가 설정돼 있으면) 백그라운드로 남긴다.
+    document.getElementById('sample-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const form = e.currentTarget
+      const note = document.getElementById('sample-note')
+      const email = form.querySelector('input[type=email]').value
+      const btn = form.querySelector('button[type=submit]')
+
+      btn.disabled = true
+      const opened = window.open('/sample-report.html', '_blank', 'noopener')
+      if (!opened) location.href = '/sample-report.html' // 팝업 차단 시
+      note.textContent = 'Opened in a new tab — print to PDF to keep a copy.'
+      note.className = 'mt-2 text-xs text-emerald-600'
+
+      if (CONFIG.FORMSPREE_ID && CONFIG.FORMSPREE_ID !== 'YOUR_FORMSPREE_ID') {
+        const params = new URLSearchParams(location.search)
+        try {
+          await fetch(`https://formspree.io/f/${CONFIG.FORMSPREE_ID}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({
+              email,
+              intent: 'sample_report',
+              variant,
+              page: location.pathname,
+              ...Object.fromEntries(UTM_KEYS.map((k) => [k, params.get(k) || ''])),
+            }),
+          })
+        } catch { /* 열람은 이미 됐으므로 수집 실패는 사용자에게 알리지 않는다 */ }
       }
-      ;(target ?? document.body).scrollIntoView({ behavior: 'smooth', block: 'center' })
-      form?.querySelector('input[type=email]')?.focus({ preventScroll: true })
+      btn.disabled = false
     })
   </script>
 </body>

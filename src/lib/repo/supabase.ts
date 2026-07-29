@@ -9,6 +9,7 @@ import { resolveStatus } from '../classify/status'
 import type { ClassifyBatchResult } from '../classify/types'
 import type { ParsedItemRow } from '../csv/parseItems'
 import { DEFAULT_FEES } from '../seedRates'
+import { SAMPLE_ITEMS, sampleShipment } from './sampleShipment'
 import type { Item, ItemPatch, NewShipment, Repo, Shipment } from './types'
 
 export function createSupabaseRepo(url: string, anonKey: string): Repo & { client: SupabaseClient } {
@@ -190,6 +191,22 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
           throwIf(updErr, 'Failed to update item status')
         }
       }
+    },
+
+    async ensureSampleShipment(): Promise<Shipment | null> {
+      const { data, error } = await supabase.from('shipments').select('id').limit(1)
+      throwIf(error, 'Failed to check shipments')
+      if ((data ?? []).length > 0) return null
+      const ws = await getWorkspaceId()
+      const { data: created, error: insErr } = await supabase
+        .from('shipments')
+        .insert({ ...sampleShipment(new Date().toISOString().slice(0, 10)), workspace_id: ws })
+        .select()
+        .single()
+      throwIf(insErr, 'Failed to create sample shipment')
+      const s = created as Shipment
+      await this.addItems(s.id, SAMPLE_ITEMS)
+      return s
     },
 
     async getRates(): Promise<RateRow[]> {

@@ -87,6 +87,11 @@ export interface Repo {
   /** 분류 결과 저장: 후보 교체 + 이력 기록 + 상태 전이 (§5) */
   saveClassification(shipmentId: string, batches: ClassifyBatchResult[]): Promise<void>
 
+  /**
+   * 선적이 하나도 없으면 샘플 선적 1건을 만든다 (스펙 §MVP: 가입 즉시 데모 프로젝트).
+   * 이미 있으면 아무것도 하지 않는다. 생성했으면 그 선적을 돌려준다.
+   */
+  ensureSampleShipment(): Promise<Shipment | null>
   getRates(): Promise<RateRow[]>
   /** 관세 프로그램 (발효일·적용범위·가산방식) */
   getPrograms(): Promise<DutyProgram[]>

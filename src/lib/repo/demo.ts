@@ -8,6 +8,7 @@ import { resolveStatus } from '../classify/status'
 import type { ClassifyBatchResult } from '../classify/types'
 import type { ParsedItemRow } from '../csv/parseItems'
 import { DEFAULT_FEES, SEED_EXCLUSIONS, SEED_PROGRAMS, SEED_RATES } from '../seedRates'
+import { SAMPLE_ITEMS, sampleShipment } from './sampleShipment'
 import type { Item, ItemPatch, NewShipment, Repo, Shipment } from './types'
 
 let seq = 0
@@ -115,6 +116,18 @@ export function createDemoRepo(): Repo {
           })
         }
       }
+    },
+
+    async ensureSampleShipment(): Promise<Shipment | null> {
+      if (shipments.size > 0) return null
+      const s: Shipment = {
+        ...sampleShipment(new Date().toISOString().slice(0, 10)),
+        id: id(),
+        created_at: new Date().toISOString(),
+      }
+      shipments.set(s.id, s)
+      await this.addItems(s.id, SAMPLE_ITEMS)
+      return s
     },
 
     async getRates(): Promise<RateRow[]> {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getRepo } from '../lib/repo'
 import type { NewShipment, Shipment } from '../lib/repo/types'
+import { SAMPLE_SHIPMENT_NAME } from '../lib/repo/sampleShipment'
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -25,8 +26,20 @@ export function ShipmentsPage() {
   const [err, setErr] = useState<string | null>(null)
 
   const reload = () => repo.listShipments().then(setShipments).catch((e) => setErr(String(e)))
+
+  // 첫 방문이면 샘플 선적을 만들어 둔다 (스펙 §MVP: 가입 즉시 데모 프로젝트).
+  // 빈 화면 + 7필드 폼으로 시작하면 신규 사용자가 첫 리포트까지 도달하지 못한다.
   useEffect(() => {
-    reload()
+    let cancelled = false
+    repo
+      .ensureSampleShipment()
+      .catch(() => null) // 샘플 생성 실패가 목록 조회를 막지 않도록
+      .then(() => {
+        if (!cancelled) reload()
+      })
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -52,7 +65,7 @@ export function ShipmentsPage() {
         <h1 className="mb-4 text-xl font-semibold">Shipments</h1>
         {shipments.length === 0 ? (
           <p className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-            No shipments yet. Create your first shipment on the right, then upload a CSV.
+            Setting up your sample shipment…
           </p>
         ) : (
           <ul className="space-y-2">
@@ -63,7 +76,14 @@ export function ShipmentsPage() {
                   className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 hover:border-indigo-300 hover:shadow-sm"
                 >
                   <div>
-                    <div className="font-medium">{s.name}</div>
+                    <div className="flex items-center gap-2 font-medium">
+                      {s.name}
+                      {s.name === SAMPLE_SHIPMENT_NAME && (
+                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                          5 SKUs ready — open to see the report
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-slate-500">
                       {s.mode} · freight ${s.freight_usd} + ins ${s.insurance_usd} · allocation: {s.allocation_basis} · rates as of {s.rate_as_of}
                     </div>
