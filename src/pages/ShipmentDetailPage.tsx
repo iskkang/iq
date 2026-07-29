@@ -9,10 +9,10 @@ import type { Item, Shipment } from '../lib/repo/types'
 import { ReportView } from './ReportView'
 
 const STATUS_CHIP: Record<Item['classification_status'], { label: string; cls: string }> = {
-  pending: { label: '미분류', cls: 'bg-slate-100 text-slate-600' },
+  pending: { label: 'Unclassified', cls: 'bg-slate-100 text-slate-600' },
   needs_review: { label: 'Needs review', cls: 'bg-amber-100 text-amber-800' },
-  auto_confirmed: { label: '자동 확정', cls: 'bg-emerald-100 text-emerald-700' },
-  user_confirmed: { label: '사용자 확정', cls: 'bg-indigo-100 text-indigo-700' },
+  auto_confirmed: { label: 'Auto-confirmed', cls: 'bg-emerald-100 text-emerald-700' },
+  user_confirmed: { label: 'Confirmed', cls: 'bg-indigo-100 text-indigo-700' },
 }
 
 export function ShipmentDetailPage() {
@@ -89,14 +89,14 @@ export function ShipmentDetailPage() {
     await repo.updateItem(item.id, {
       hts_final: normalizeHts(hts),
       hts_source: fromLlm ? 'llm' : 'manual',
-      classification_status: 'user_confirmed', // 수동/선택 확정 시 confidence 무시 (§5)
+      classification_status: 'user_confirmed', // manual/user pick overrides confidence (§5)
     })
     setExpanded(null)
     await reload()
   }
 
   if (err && !shipment) return <p className="text-sm text-rose-600">{err}</p>
-  if (!shipment) return <p className="text-sm text-slate-500">불러오는 중…</p>
+  if (!shipment) return <p className="text-sm text-slate-500">Loading…</p>
 
   const pendingCount = items.filter((i) => i.classification_status === 'pending').length
   const reviewCount = items.filter((i) => i.classification_status === 'needs_review').length
@@ -105,11 +105,11 @@ export function ShipmentDetailPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <Link to="/" className="text-xs text-slate-500 hover:text-indigo-600">← 선적 목록</Link>
+          <Link to="/" className="text-xs text-slate-500 hover:text-indigo-600">← All shipments</Link>
           <h1 className="text-xl font-semibold">{shipment.name}</h1>
           <p className="text-xs text-slate-500">
             {shipment.mode} · freight ${shipment.freight_usd} + ins ${shipment.insurance_usd} ·
-            배부 {shipment.allocation_basis} · target {Math.round(shipment.target_margin * 100)}% ·
+            allocation {shipment.allocation_basis} · target {Math.round(shipment.target_margin * 100)}% ·
             fee {Math.round(shipment.channel_fee_pct * 100)}% · rates as of {shipment.rate_as_of}
           </p>
         </div>
@@ -120,7 +120,7 @@ export function ShipmentDetailPage() {
               onClick={() => setTab(t)}
               className={`rounded-md px-4 py-1.5 ${tab === t ? 'bg-white font-medium shadow-sm' : 'text-slate-500'}`}
             >
-              {t === 'items' ? `SKU (${items.length})` : '리포트'}
+              {t === 'items' ? `SKUs (${items.length})` : 'Report'}
             </button>
           ))}
         </div>
@@ -144,31 +144,31 @@ export function ShipmentDetailPage() {
               onClick={() => fileRef.current?.click()}
               className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
             >
-              CSV 업로드
+              Upload CSV
             </button>
             <button
               onClick={runClassify}
               disabled={classifying !== null || pendingCount === 0}
               className="rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-40"
             >
-              {classifying ? `HTS 추정 중… ${classifying}` : `HTS 추정 (미분류 ${pendingCount}건)`}
+              {classifying ? `Estimating HTS… ${classifying}` : `Estimate HTS (${pendingCount} unclassified)`}
             </button>
             {reviewCount > 0 && (
               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
-                리뷰 필요 {reviewCount}건 (confidence &lt; {CONFIDENCE_THRESHOLD})
+                Needs review: {reviewCount} (confidence &lt; {CONFIDENCE_THRESHOLD})
               </span>
             )}
             <span className="ml-auto text-[11px] text-slate-400">
-              필수 컬럼: {REQUIRED_COLUMNS.join(', ')} (선택: weight_kg_per_unit, current_price_usd, hts_code)
+              Required columns: {REQUIRED_COLUMNS.join(', ')} (optional: weight_kg_per_unit, current_price_usd, hts_code)
             </span>
           </div>
 
           {csvErrors.length > 0 && (
             <div className="rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700">
-              <p className="font-medium">CSV 오류 {csvErrors.length}건 (해당 행 제외됨):</p>
+              <p className="font-medium">CSV errors ({csvErrors.length}) — these rows were skipped:</p>
               <ul className="mt-1 list-inside list-disc">
                 {csvErrors.slice(0, 10).map((e) => <li key={e}>{e}</li>)}
-                {csvErrors.length > 10 && <li>… 외 {csvErrors.length - 10}건</li>}
+                {csvErrors.length > 10 && <li>… and {csvErrors.length - 10} more</li>}
               </ul>
             </div>
           )}
@@ -180,13 +180,13 @@ export function ShipmentDetailPage() {
               <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-2">SKU</th>
-                  <th className="px-3 py-2">상품명 / 소재</th>
-                  <th className="px-3 py-2 text-right">단가</th>
-                  <th className="px-3 py-2">원산지</th>
-                  <th className="px-3 py-2 text-right">수량</th>
-                  <th className="px-3 py-2 text-right">현재가</th>
+                  <th className="px-3 py-2">Product / material</th>
+                  <th className="px-3 py-2 text-right">Unit cost</th>
+                  <th className="px-3 py-2">Origin</th>
+                  <th className="px-3 py-2 text-right">Units</th>
+                  <th className="px-3 py-2 text-right">Price</th>
                   <th className="px-3 py-2">HTS</th>
-                  <th className="px-3 py-2">상태</th>
+                  <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2" />
                 </tr>
               </thead>
@@ -194,7 +194,7 @@ export function ShipmentDetailPage() {
                 {items.length === 0 && (
                   <tr>
                     <td colSpan={9} className="px-3 py-8 text-center text-slate-400">
-                      CSV를 업로드하거나 아래에서 수동으로 추가하세요. (샘플: samples/sample_products.csv)
+                      Upload a CSV or add SKUs manually below. (Sample: samples/sample_products.csv)
                     </td>
                   </tr>
                 )}
@@ -221,7 +221,7 @@ export function ShipmentDetailPage() {
                           onClick={() => setExpanded(expanded === it.id ? null : it.id)}
                           className="mr-2 text-indigo-600 hover:underline"
                         >
-                          {expanded === it.id ? '닫기' : 'HTS 확정'}
+                          {expanded === it.id ? 'Close' : 'Confirm HTS'}
                         </button>
                         <button
                           onClick={async () => {
@@ -230,7 +230,7 @@ export function ShipmentDetailPage() {
                           }}
                           className="text-slate-400 hover:text-rose-600"
                         >
-                          삭제
+                          Delete
                         </button>
                       </td>
                     </tr>
@@ -266,7 +266,7 @@ function CandidatePicker({
     <div className="space-y-3 text-xs">
       {item.candidates.length > 0 ? (
         <div className="space-y-1.5">
-          <p className="font-medium text-slate-600">LLM 후보 (1개를 선택해 확정):</p>
+          <p className="font-medium text-slate-600">LLM candidates (pick one to confirm):</p>
           {item.candidates.map((c) => (
             <button
               key={c.hts_code}
@@ -282,15 +282,15 @@ function CandidatePicker({
                 {(c.confidence * 100).toFixed(0)}%
               </span>
               <span className="flex-1 text-slate-500">{c.rationale}</span>
-              <span className="text-indigo-600">이걸로 확정 →</span>
+              <span className="text-indigo-600">Use this →</span>
             </button>
           ))}
         </div>
       ) : (
-        <p className="text-slate-500">아직 LLM 후보가 없습니다. 'HTS 추정' 버튼을 누르거나 아래에 직접 입력하세요.</p>
+        <p className="text-slate-500">No LLM candidates yet. Click "Estimate HTS" or enter a code manually below.</p>
       )}
       <div className="flex items-center gap-2">
-        <span className="text-slate-600">직접 입력 (10자리):</span>
+        <span className="text-slate-600">Manual entry (10 digits):</span>
         <input
           value={manual}
           onChange={(e) => {
@@ -302,12 +302,12 @@ function CandidatePicker({
         />
         <button
           onClick={() => {
-            if (!isValidHts10(manual)) return setManualErr('10자리 숫자 HTS 코드가 아닙니다')
+            if (!isValidHts10(manual)) return setManualErr('Not a valid 10-digit HTS code')
             onConfirm(item, manual, false)
           }}
           className="rounded-md bg-slate-800 px-3 py-1 font-medium text-white hover:bg-slate-700"
         >
-          수동 확정 (confidence 무시)
+          Confirm manually (ignores confidence)
         </button>
         {manualErr && <span className="text-rose-600">{manualErr}</span>}
       </div>
@@ -330,7 +330,7 @@ function ManualAddForm({ shipmentId, onAdded }: { shipmentId: string; onAdded: (
     const cost = Number(f.unit_cost_usd)
     const units = Number(f.units_per_shipment)
     if (!f.sku.trim() || !(cost > 0) || !Number.isInteger(units) || units <= 0 || !f.origin_country.trim()) {
-      return setErr('sku · 단가(양수) · 수량(양의 정수) · 원산지는 필수입니다')
+      return setErr('sku, unit cost (positive), units (positive integer) and origin are required')
     }
     await repo.addItems(shipmentId, [
       {
@@ -353,7 +353,7 @@ function ManualAddForm({ shipmentId, onAdded }: { shipmentId: string; onAdded: (
   if (!open)
     return (
       <button onClick={() => setOpen(true)} className="text-xs text-indigo-600 hover:underline">
-        + SKU 수동 추가
+        + Add SKU manually
       </button>
     )
 
@@ -369,15 +369,15 @@ function ManualAddForm({ shipmentId, onAdded }: { shipmentId: string; onAdded: (
   return (
     <form onSubmit={submit} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 text-xs">
       {input('sku', 'SKU *')}
-      {input('product_name', '상품명', 'w-36')}
-      {input('description_or_material', '소재/설명', 'w-44')}
-      {input('unit_cost_usd', '단가 USD *', 'w-24')}
-      {input('origin_country', '원산지 (CN) *', 'w-24')}
-      {input('units_per_shipment', '수량 *', 'w-20')}
-      {input('current_price_usd', '현재가', 'w-24')}
-      {input('weight_kg_per_unit', 'kg/개', 'w-20')}
-      <button className="rounded-md bg-slate-800 px-3 py-1.5 font-medium text-white hover:bg-slate-700">추가</button>
-      <button type="button" onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">닫기</button>
+      {input('product_name', 'Product name', 'w-36')}
+      {input('description_or_material', 'Material / description', 'w-44')}
+      {input('unit_cost_usd', 'Unit cost USD *', 'w-24')}
+      {input('origin_country', 'Origin (CN) *', 'w-24')}
+      {input('units_per_shipment', 'Units *', 'w-20')}
+      {input('current_price_usd', 'Current price', 'w-24')}
+      {input('weight_kg_per_unit', 'kg/unit', 'w-20')}
+      <button className="rounded-md bg-slate-800 px-3 py-1.5 font-medium text-white hover:bg-slate-700">Add</button>
+      <button type="button" onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">Close</button>
       {err && <span className="w-full text-rose-600">{err}</span>}
     </form>
   )

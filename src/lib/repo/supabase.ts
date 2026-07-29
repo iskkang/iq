@@ -17,7 +17,7 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
   async function getWorkspaceId(): Promise<string> {
     if (workspaceId) return workspaceId
     const { data, error } = await supabase.from('workspaces').select('id').limit(1).single()
-    if (error) throw new Error(`워크스페이스 조회 실패: ${error.message}`)
+    if (error) throw new Error(`Failed to load workspace: ${error.message}`)
     workspaceId = data.id
     return data.id
   }
@@ -36,11 +36,11 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
     },
     async signIn(email, password) {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
-      throwIf(error, '로그인 실패')
+      throwIf(error, 'Sign-in failed')
     },
     async signUp(email, password) {
       const { data, error } = await supabase.auth.signUp({ email, password })
-      throwIf(error, '가입 실패')
+      throwIf(error, 'Sign-up failed')
       return { needsEmailConfirm: !data.session }
     },
     async signOut() {
@@ -57,12 +57,12 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
         .from('shipments')
         .select('*')
         .order('created_at', { ascending: false })
-      throwIf(error, '선적 목록 조회 실패')
+      throwIf(error, 'Failed to list shipments')
       return (data ?? []) as Shipment[]
     },
     async getShipment(id) {
       const { data, error } = await supabase.from('shipments').select('*').eq('id', id).maybeSingle()
-      throwIf(error, '선적 조회 실패')
+      throwIf(error, 'Failed to load shipment')
       return (data as Shipment) ?? null
     },
     async createShipment(input: NewShipment) {
@@ -72,16 +72,16 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
         .insert({ ...input, workspace_id: ws })
         .select()
         .single()
-      throwIf(error, '선적 생성 실패')
+      throwIf(error, 'Failed to create shipment')
       return data as Shipment
     },
     async updateShipment(id, patch) {
       const { error } = await supabase.from('shipments').update(patch).eq('id', id)
-      throwIf(error, '선적 수정 실패')
+      throwIf(error, 'Failed to update shipment')
     },
     async deleteShipment(id) {
       const { error } = await supabase.from('shipments').delete().eq('id', id)
-      throwIf(error, '선적 삭제 실패')
+      throwIf(error, 'Failed to delete shipment')
     },
 
     async listItems(shipmentId) {
@@ -90,7 +90,7 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
         .select('*, hts_candidates(rank, hts_code, confidence, rationale)')
         .eq('shipment_id', shipmentId)
         .order('created_at', { ascending: true })
-      throwIf(error, 'SKU 조회 실패')
+      throwIf(error, 'Failed to load SKUs')
       return (data ?? []).map((row) => {
         const { hts_candidates, ...rest } = row as Item & {
           hts_candidates: Array<{ rank: number; hts_code: string; confidence: number; rationale: string }>
@@ -122,17 +122,17 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
       }))
       for (let i = 0; i < payload.length; i += 500) {
         const { error } = await supabase.from('items').insert(payload.slice(i, i + 500))
-        throwIf(error, 'SKU 추가 실패')
+        throwIf(error, 'Failed to add SKUs')
       }
       return payload.length
     },
     async updateItem(id, patch: ItemPatch) {
       const { error } = await supabase.from('items').update(patch).eq('id', id)
-      throwIf(error, 'SKU 수정 실패')
+      throwIf(error, 'Failed to update SKU')
     },
     async deleteItem(id) {
       const { error } = await supabase.from('items').delete().eq('id', id)
-      throwIf(error, 'SKU 삭제 실패')
+      throwIf(error, 'Failed to delete SKU')
     },
 
     async saveClassification(_shipmentId, batches: ClassifyBatchResult[]) {
@@ -152,11 +152,11 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
             input: { item_id: r.item_id },
             raw_output: JSON.parse(JSON.stringify({ candidates: r.candidates })),
           })
-          throwIf(runErr, '분류 이력 저장 실패')
+          throwIf(runErr, 'Failed to save classification run')
 
           // 후보 교체
           const { error: delErr } = await supabase.from('hts_candidates').delete().eq('item_id', r.item_id)
-          throwIf(delErr, '기존 후보 삭제 실패')
+          throwIf(delErr, 'Failed to clear previous candidates')
           const { error: candErr } = await supabase.from('hts_candidates').insert(
             r.candidates.map((c, rank) => ({
               item_id: r.item_id,
@@ -167,7 +167,7 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
               rationale: c.rationale,
             })),
           )
-          throwIf(candErr, '후보 저장 실패')
+          throwIf(candErr, 'Failed to save candidates')
 
           // 상태 전이 (§1-3: 저신뢰는 자동 확정 금지 → needs_review, 잠정값만 기록)
           const { error: updErr } = await supabase
@@ -178,7 +178,7 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
               classification_status: confident ? 'auto_confirmed' : 'needs_review',
             })
             .eq('id', r.item_id)
-          throwIf(updErr, '상태 갱신 실패')
+          throwIf(updErr, 'Failed to update item status')
         }
       }
     },
@@ -192,7 +192,7 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
           .from('rate_ledger')
           .select('hts_code, origin_country, layer, ad_valorem_rate, effective_from, effective_to')
           .range(from, from + page - 1)
-        throwIf(error, 'rate 원장 조회 실패')
+        throwIf(error, 'Failed to load rate ledger')
         const rows = (data ?? []).map((r) => ({ ...r, ad_valorem_rate: Number(r.ad_valorem_rate) })) as RateRow[]
         all.push(...rows)
         if (rows.length < page) break
@@ -208,7 +208,7 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
         .order('effective_from', { ascending: false })
         .limit(1)
         .maybeSingle()
-      throwIf(error, 'fee 설정 조회 실패')
+      throwIf(error, 'Failed to load fee settings')
       if (!data) return DEFAULT_FEES
       return {
         mpf_rate: Number(data.mpf_rate),

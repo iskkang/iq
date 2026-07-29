@@ -64,7 +64,7 @@ export function computeShipment(
       totalWeight = w.reduce((a, b) => a + b, 0)
     } else {
       basisUsed = 'value'
-      shipmentWarnings.push('중량 미입력 SKU가 있어 가액 기준으로 배부했습니다.')
+      shipmentWarnings.push('Some SKUs are missing weight — freight allocated by value instead.')
     }
   }
 
@@ -89,11 +89,11 @@ export function computeShipment(
     if (hts) {
       dutyRateTotal = dutyLayers.reduce((a, l) => a + l.rate, 0)
       if (dutyLayers.every((l) => l.matched_hts === null)) {
-        warnings.push('rate 원장에 해당 HTS 항목 없음 — 관세 0으로 계산됨')
+        warnings.push('HTS not found in rate ledger — duty calculated as $0')
       }
     } else {
       dutyLayers = dutyLayers.map((l) => ({ ...l, rate: 0, matched_hts: null }))
-      warnings.push('HTS 미확정 — 관세 0으로 계산됨')
+      warnings.push('HTS not confirmed — duty calculated as $0')
     }
     const dutyUsd = it.unit_cost_usd * dutyRateTotal
 
@@ -109,7 +109,7 @@ export function computeShipment(
     const margin = price && price > 0 ? trueMargin(price, landed, shipment.channel_fee_pct) : null
 
     const rec = recommendedPrice(landed, shipment.target_margin, shipment.channel_fee_pct)
-    if (rec === null) warnings.push('target margin + channel fee ≥ 100% — 권장가 계산 불가')
+    if (rec === null) warnings.push('target margin + channel fee ≥ 100% — recommended price unavailable')
 
     return {
       sku: it.sku,

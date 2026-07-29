@@ -44,8 +44,8 @@ try {
   // 1) 데모 로그인 (모든 화면 고지 §1-2 확인 포함)
   check('고지 문구(로그인 화면)', await page.getByText('Estimates only', { exact: false }).first().isVisible())
   await page.fill('input[type=email]', 'smoke@test.dev')
-  await page.click('button:has-text("데모 시작")')
-  await page.waitForSelector('text=선적 (Shipments)')
+  await page.click('button:has-text("Start demo")')
+  await page.waitForSelector('h1:has-text("Shipments")')
   check('데모 로그인 → 선적 목록', true)
 
   // 2) 선적 생성
@@ -53,8 +53,8 @@ try {
   const numInputs = page.locator('form input[type=number]')
   await numInputs.nth(0).fill('2000') // freight
   await numInputs.nth(1).fill('100') // insurance
-  await page.click('button:has-text("선적 생성")')
-  await page.waitForSelector('text=CSV 업로드')
+  await page.click('button:has-text("Create shipment")')
+  await page.waitForSelector('text=Upload CSV')
   check('선적 생성 → 상세 화면', true)
 
   // 3) CSV 업로드 (샘플 10행)
@@ -64,24 +64,24 @@ try {
   check(`CSV 10행 업로드 (표시 ${rowCount}행)`, rowCount === 10)
 
   // 4) HTS 추정 (mock)
-  await page.click('button:has-text("HTS 추정")')
-  await page.waitForSelector('text=자동 확정', { timeout: 15000 })
-  const confirmed = await page.locator('text=자동 확정').count()
+  await page.click('button:has-text("Estimate HTS")')
+  await page.waitForSelector('text=Auto-confirmed', { timeout: 15000 })
+  const confirmed = await page.locator('text=Auto-confirmed').count()
   const review = await page.locator('span:has-text("Needs review")').count()
   check(`분류 완료 (자동확정 ${confirmed}, 리뷰 ${review})`, confirmed + review >= 10)
 
   // 5) 후보 확정 UI (첫 SKU에서 후보 확인)
-  await page.locator('button:has-text("HTS 확정")').first().click()
-  await page.waitForSelector('text=LLM 후보')
-  const candBtns = await page.locator('button:has-text("이걸로 확정")').count()
+  await page.locator('button:has-text("Confirm HTS")').first().click()
+  await page.waitForSelector('text=LLM candidates')
+  const candBtns = await page.locator('button:has-text("Use this")').count()
   check(`LLM 후보 2~3개 표시 (${candBtns}개)`, candBtns >= 2 && candBtns <= 3)
-  await page.locator('button:has-text("이걸로 확정")').first().click()
-  await page.waitForSelector('text=사용자 확정')
+  await page.locator('button:has-text("Use this")').first().click()
+  await page.getByText('Confirmed', { exact: true }).first().waitFor()
   check('후보 1개 확정 → 사용자 확정 상태', true)
 
   // 6) 리포트
-  await page.click('button:has-text("리포트")')
-  await page.waitForSelector('text=Duty % 내역')
+  await page.click('button:has-text("Report")')
+  await page.waitForSelector('text=Duty % breakdown')
   await page.waitForSelector('text=Rates as of')
   const reportRows = await page.locator('tbody tr').count()
   check(`리포트 테이블 10행 (표시 ${reportRows}행)`, reportRows === 10)
@@ -92,7 +92,7 @@ try {
   // 7) CSV 다운로드
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.click('button:has-text("CSV 다운로드")'),
+    page.click('button:has-text("Download CSV")'),
   ])
   const path = await download.path()
   const { readFileSync } = await import('node:fs')

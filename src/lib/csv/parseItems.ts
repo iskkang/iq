@@ -50,7 +50,7 @@ export function parseItemsCsv(csvText: string): ParseResult {
   const fields = parsed.meta.fields ?? []
   const missing = REQUIRED_COLUMNS.filter((c) => !fields.includes(c))
   if (missing.length > 0) {
-    return { items: [], errors: [`필수 컬럼 누락: ${missing.join(', ')}`] }
+    return { items: [], errors: [`Missing required columns: ${missing.join(', ')}`] }
   }
 
   const items: ParsedItemRow[] = []
@@ -61,11 +61,11 @@ export function parseItemsCsv(csvText: string): ParseResult {
     const units = num(row.units_per_shipment)
     const origin = (row.origin_country ?? '').trim().toUpperCase()
 
-    if (!sku) return errors.push(`행 ${line}: sku 없음`)
-    if (cost === null || cost <= 0) return errors.push(`행 ${line} (${sku}): unit_cost_usd 가 양수가 아님`)
+    if (!sku) return errors.push(`Row ${line}: missing sku`)
+    if (cost === null || cost <= 0) return errors.push(`Row ${line} (${sku}): unit_cost_usd must be a positive number`)
     if (units === null || units <= 0 || !Number.isInteger(units))
-      return errors.push(`행 ${line} (${sku}): units_per_shipment 는 양의 정수여야 함`)
-    if (!origin) return errors.push(`행 ${line} (${sku}): origin_country 없음`)
+      return errors.push(`Row ${line} (${sku}): units_per_shipment must be a positive integer`)
+    if (!origin) return errors.push(`Row ${line} (${sku}): missing origin_country`)
 
     const weight = num(row.weight_kg_per_unit)
     const price = num(row.current_price_usd)

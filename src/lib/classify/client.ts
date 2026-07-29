@@ -23,7 +23,7 @@ async function classifyBatch(
   const { data, error } = await backend.supabase.functions.invoke('classify', {
     body: { items: batch },
   })
-  if (error) throw new Error(`classify edge function 실패: ${error.message}`)
+  if (error) throw new Error(`classify edge function failed: ${error.message}`)
   const results = (data.results as Array<{ item_id: string; candidates: unknown }>).map((r) => ({
     item_id: r.item_id,
     candidates: sanitizeCandidates(r.candidates),

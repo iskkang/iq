@@ -52,7 +52,7 @@ describe('duty 레이어 합산 (스펙 §4)', () => {
     ]
     const r = computeShipment(ship(), items, LEDGER, FEES)
     expect(r.items[0].duty_usd).toBe(0)
-    expect(r.items[0].warnings.some((w) => w.includes('HTS 미확정'))).toBe(true)
+    expect(r.items[0].warnings.some((w) => w.includes('HTS not confirmed'))).toBe(true)
   })
 
   it('원장에 전혀 없는 HTS → duty 0 + 경고', () => {
@@ -61,7 +61,7 @@ describe('duty 레이어 합산 (스펙 §4)', () => {
     ]
     const r = computeShipment(ship(), items, LEDGER, FEES)
     expect(r.items[0].duty_rate_total).toBe(0)
-    expect(r.items[0].warnings.some((w) => w.includes('원장'))).toBe(true)
+    expect(r.items[0].warnings.some((w) => w.includes('rate ledger'))).toBe(true)
   })
 
   it('rate 기준일에 따라 레이어 적용이 달라진다 (IEEPA 발효 전)', () => {

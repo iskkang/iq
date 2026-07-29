@@ -79,8 +79,8 @@ export function mockClassifyBatch(items: ClassifyItemInput[]): ClassifyBatchResu
       confidence: Math.max(0.05, Math.round((base - rank * 0.17) * 100) / 100),
       rationale:
         rank === 0
-          ? `[MOCK] '${item.product_name || item.description_or_material}' 텍스트 기반 최우선 후보`
-          : `[MOCK] 대안 후보 ${rank + 1}`,
+          ? `[MOCK] Top candidate based on '${item.product_name || item.description_or_material}' text match`
+          : `[MOCK] Alternative candidate ${rank + 1}`,
     }))
     return { item_id: item.id, candidates }
   })

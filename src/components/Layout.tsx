@@ -22,7 +22,7 @@ export function Layout({
             <span className="text-lg font-semibold tracking-tight">LandedIQ</span>
             {demo && (
               <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                DEMO MODE — 데이터는 새로고침 시 사라집니다
+                DEMO MODE — data resets on refresh
               </span>
             )}
           </Link>

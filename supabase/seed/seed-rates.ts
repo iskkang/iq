@@ -21,7 +21,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const url = process.env.SUPABASE_URL
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 if (!url || !key) {
-  console.error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 환경변수가 필요합니다.')
+  console.error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY env vars are required.')
   process.exit(1)
 }
 const supabase = createClient(url, key)
@@ -88,7 +88,7 @@ function loadUsitcCsv(file: string, effectiveFrom: string): SeedRow[] {
       note: null,
     })
   }
-  if (skipped > 0) console.log(`※ 종량세/복합세 등 비종가세 ${skipped}건은 건너뜀 (MVP는 종가세만 지원)`)
+  if (skipped > 0) console.log(`Skipped ${skipped} non-ad-valorem rows (specific/compound rates — MVP supports ad valorem only)`)
   return rows
 }
 
@@ -100,14 +100,14 @@ async function main() {
       ? loadUsitcCsv(args[usitcIdx + 1], args[usitcIdx + 2] ?? '2025-01-01')
       : loadBundledSeed()
 
-  console.log(`rate_ledger upsert: ${rows.length}건`)
+  console.log(`rate_ledger upsert: ${rows.length} rows`)
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500)
     const { error } = await supabase
       .from('rate_ledger')
       .upsert(chunk, { onConflict: 'hts_code,origin_country,layer,effective_from' })
     if (error) {
-      console.error('rate_ledger upsert 실패:', error.message)
+      console.error('rate_ledger upsert failed:', error.message)
       process.exit(1)
     }
   }
@@ -121,17 +121,17 @@ async function main() {
         mpf_max_usd: 634.62,
         hmf_rate: 0.00125,
         effective_from: '2024-10-01',
-        note: 'FY2025 MPF min/max — 매년 10/1 조정 확인 필요',
+        note: 'FY2025 MPF min/max — verify annual adjustment every Oct 1',
       },
     ],
     { onConflict: 'effective_from' },
   )
   if (feeError) {
-    console.error('fee_settings upsert 실패:', feeError.message)
+    console.error('fee_settings upsert failed:', feeError.message)
     process.exit(1)
   }
 
-  console.log('시드 완료. (301·IEEPA 실제 세율은 관리자가 rate_ledger에 수기 입력하세요 — 시드의 SAMPLE 행은 예시값입니다)')
+  console.log('Seed complete. (Enter real Section 301 / IEEPA rates manually in rate_ledger — SAMPLE rows are placeholders.)')
 }
 
 main()

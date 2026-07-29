@@ -30,7 +30,7 @@ describe('CSV 파싱 (스펙 §2 컬럼)', () => {
   it('필수 컬럼 누락 시 전체 거부', () => {
     const { items, errors } = parseItemsCsv('sku,unit_cost_usd\nA,1')
     expect(items).toEqual([])
-    expect(errors[0]).toContain('필수 컬럼 누락')
+    expect(errors[0]).toContain('Missing required columns')
   })
 
   it('불량 행은 오류로 수집하고 정상 행만 통과', () => {

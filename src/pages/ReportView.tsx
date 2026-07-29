@@ -53,22 +53,22 @@ export function ReportView({ shipment, items }: { shipment: Shipment; items: Ite
   }, [rates, fees, items, shipment])
 
   if (err) return <p className="text-sm text-rose-600">{err}</p>
-  if (!result) return <p className="text-sm text-slate-500">rate 원장 불러오는 중…</p>
+  if (!result) return <p className="text-sm text-slate-500">Loading rate ledger…</p>
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs text-slate-500">
           <span className="font-medium text-slate-700">Rates as of {result.rate_as_of}</span>
-          {' · '}MPF(선적) {fmtUsd(round2(result.totals.mpf_shipment))} · HMF(선적){' '}
-          {fmtUsd(round2(result.totals.hmf_shipment))} · 배부 기준: {result.totals.allocation_basis_used}
-          {' · '}선적 총가액 {fmtUsd(round2(result.totals.total_value))}
+          {' · '}MPF (shipment) {fmtUsd(round2(result.totals.mpf_shipment))} · HMF (shipment){' '}
+          {fmtUsd(round2(result.totals.hmf_shipment))} · Allocation basis: {result.totals.allocation_basis_used}
+          {' · '}Shipment value {fmtUsd(round2(result.totals.total_value))}
         </div>
         <button
           onClick={() => downloadCsv(`landediq-report-${shipment.name}.csv`, buildReportCsv(result, shipment.name))}
           className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
         >
-          CSV 다운로드
+          Download CSV
         </button>
       </div>
 
@@ -82,7 +82,7 @@ export function ReportView({ shipment, items }: { shipment: Shipment; items: Ite
             <tr>
               <th className="px-3 py-2 text-left">SKU</th>
               <th className="px-3 py-2 text-left">HTS</th>
-              <th className="px-3 py-2 text-left">Duty % 내역</th>
+              <th className="px-3 py-2 text-left">Duty % breakdown</th>
               <th className="px-3 py-2">Duty $</th>
               <th className="px-3 py-2">Fees</th>
               <th className="px-3 py-2">Freight/unit</th>
@@ -101,7 +101,7 @@ export function ReportView({ shipment, items }: { shipment: Shipment; items: Ite
                   {formatHts(r.hts_code)}
                   {r.provisional && (
                     <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800">
-                      잠정
+                      provisional
                     </span>
                   )}
                 </td>

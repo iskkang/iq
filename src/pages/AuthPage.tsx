@@ -21,7 +21,7 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
         onSignedIn()
       } else {
         const { needsEmailConfirm } = await repo.signUp(email, password)
-        if (needsEmailConfirm) setMsg('확인 메일을 보냈습니다. 메일의 링크로 인증 후 로그인하세요.')
+        if (needsEmailConfirm) setMsg('Confirmation email sent. Verify your address, then sign in.')
         else onSignedIn()
       }
     } catch (err) {
@@ -39,14 +39,14 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
           <span className="text-lg font-semibold">LandedIQ</span>
         </div>
         <p className="mb-4 text-sm text-slate-500">
-          SKU별 landed cost · 실제 마진 · 권장 판매가 추정
+          Landed cost, true margin & recommended price — per SKU
         </p>
 
         {demo ? (
           <>
             <p className="mb-4 rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
-              Supabase 환경변수가 없어 <b>데모 모드</b>로 실행 중입니다. 아무 이메일로 계속하세요
-              (데이터는 브라우저 메모리에만 저장).
+              Running in <b>demo mode</b> (no Supabase env configured). Continue with any email —
+              data lives in browser memory only.
             </p>
             <form onSubmit={submit} className="space-y-3">
               <input
@@ -60,7 +60,7 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
                 disabled={busy}
                 className="w-full rounded-md bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
               >
-                데모 시작
+                Start demo
               </button>
             </form>
           </>
@@ -73,7 +73,7 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
                   onClick={() => setMode(m)}
                   className={`flex-1 rounded-md py-1.5 ${mode === m ? 'bg-white font-medium shadow-sm' : 'text-slate-500'}`}
                 >
-                  {m === 'signin' ? '로그인' : '가입'}
+                  {m === 'signin' ? 'Sign in' : 'Sign up'}
                 </button>
               ))}
             </div>
@@ -81,7 +81,7 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
               <input
                 type="email"
                 required
-                placeholder="이메일"
+                placeholder="Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -90,7 +90,7 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
                 type="password"
                 required
                 minLength={6}
-                placeholder="비밀번호 (6자 이상)"
+                placeholder="Password (6+ characters)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -99,7 +99,7 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
                 disabled={busy}
                 className="w-full rounded-md bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
               >
-                {busy ? '처리 중…' : mode === 'signin' ? '로그인' : '가입하기'}
+                {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}
               </button>
             </form>
           </>
