@@ -72,3 +72,16 @@ describe('ensureSampleShipment', () => {
     }
   })
 })
+
+describe('비동기 분류 큐', () => {
+  /**
+   * 데모는 서버가 없으므로 큐잉이 불가능하다. null 을 돌려줘야 호출부가
+   * 동기 mock 경로로 폴백한다 — 여기서 빈 문자열이나 가짜 id 를 주면
+   * 화면이 오지 않을 결과를 영원히 기다린다.
+   */
+  it('데모 저장소는 큐잉을 지원하지 않는다고 알린다', async () => {
+    const repo = createDemoRepo()
+    expect(await repo.enqueueClassification('any-shipment')).toBeNull()
+    expect(await repo.classificationProgress('any-job')).toBeNull()
+  })
+})

@@ -10,7 +10,7 @@ import type { ClassifyBatchResult } from '../classify/types'
 import type { ParsedItemRow } from '../csv/parseItems'
 import { DEFAULT_FEES } from '../seedRates'
 import { SAMPLE_ITEMS, sampleShipment } from './sampleShipment'
-import type { Item, ItemPatch, NewShipment, Repo, Shipment } from './types'
+import type { ClassificationProgress, Item, ItemPatch, NewShipment, Repo, Shipment } from './types'
 
 export function createSupabaseRepo(url: string, anonKey: string): Repo & { client: SupabaseClient } {
   const supabase = createClient(url, anonKey)
@@ -190,6 +190,28 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
             .eq('id', r.item_id)
           throwIf(updErr, 'Failed to update item status')
         }
+      }
+    },
+
+    async enqueueClassification(shipmentId: string): Promise<string | null> {
+      const { data, error } = await supabase.rpc('enqueue_classification', { p_shipment_id: shipmentId })
+      throwIf(error, 'Failed to queue classification')
+      return (data as string | null) ?? null
+    },
+
+    async classificationProgress(jobId: string): Promise<ClassificationProgress | null> {
+      const { data, error } = await supabase
+        .from('classification_jobs')
+        .select('status, done_tasks, failed_tasks, total_tasks')
+        .eq('id', jobId)
+        .maybeSingle()
+      throwIf(error, 'Failed to read job progress')
+      if (!data) return null
+      return {
+        status: data.status as ClassificationProgress['status'],
+        done: data.done_tasks as number,
+        failed: data.failed_tasks as number,
+        total: data.total_tasks as number,
       }
     },
 

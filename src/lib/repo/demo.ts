@@ -118,6 +118,14 @@ export function createDemoRepo(): Repo {
       }
     },
 
+    // 데모는 서버가 없다 — 호출부가 동기 mock 경로로 가도록 null 을 준다
+    async enqueueClassification(): Promise<string | null> {
+      return null
+    },
+    async classificationProgress(): Promise<null> {
+      return null
+    },
+
     async ensureSampleShipment(): Promise<Shipment | null> {
       if (shipments.size > 0) return null
       const s: Shipment = {

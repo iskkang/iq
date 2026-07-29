@@ -60,6 +60,14 @@ export type ItemPatch = Partial<
   >
 >
 
+/** 큐 작업 진행 상태 — UI 진행률 표시용 */
+export interface ClassificationProgress {
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+  done: number
+  failed: number
+  total: number
+}
+
 /**
  * 데이터 접근 인터페이스.
  * demo(인메모리) / supabase(실제, RLS로 워크스페이스 격리) 두 구현.
@@ -86,6 +94,18 @@ export interface Repo {
 
   /** 분류 결과 저장: 후보 교체 + 이력 기록 + 상태 전이 (§5) */
   saveClassification(shipmentId: string, batches: ClassifyBatchResult[]): Promise<void>
+
+  /**
+   * 분류를 서버 큐에 넣는다 (pg_cron 워커가 처리).
+   *
+   * 500 SKU 는 10분이 걸린다 — 브라우저를 붙잡아 둘 수 없다. 큐에 넣으면 탭을
+   * 닫아도 계속 돌고, 결과는 아이템 단위로 도착하는 대로 보인다.
+   * 비동기를 못 쓰는 백엔드(데모)는 null 을 돌려주고 호출부가 동기 경로로 간다.
+   */
+  enqueueClassification(shipmentId: string): Promise<string | null>
+
+  /** 큐 작업 진행률. 없는 작업이면 null */
+  classificationProgress(jobId: string): Promise<ClassificationProgress | null>
 
   /**
    * 선적이 하나도 없으면 샘플 선적 1건을 만든다 (스펙 §MVP: 가입 즉시 데모 프로젝트).

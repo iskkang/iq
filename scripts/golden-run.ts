@@ -8,7 +8,7 @@
  *
  * 두 시나리오를 함께 낸다:
  *   A. as-shipped — 분류기가 낸 top 후보를 그대로 확정 (실사용자가 받는 숫자)
- *   B. target-HTS — 계획서의 잠정 정답 6자리를 사용자가 리뷰 큐에서 골랐다고 가정
+ *   B. target-HTS — 잠정 정답 8자리 라인을 사용자가 리뷰 큐에서 골랐다고 가정
  *                   (§검증2 의 세율·계산 대조 대상)
  *
  * 실행: npm run golden
@@ -48,6 +48,7 @@ import {
   parseStageB,
   stageAUser,
   stageBPrompt,
+  stageBRetryPrompt,
   tallyVotes,
 } from '../supabase/functions/classify/pipeline'
 import type { CatalogLine } from '../supabase/functions/classify/pipeline'
@@ -136,7 +137,9 @@ async function classifyViaEdgeHttp(items: ClassifyItemInput[]): Promise<Classify
         apikey: SUPABASE_KEY!,
         authorization: `Bearer ${SUPABASE_KEY}`,
       },
-      body: JSON.stringify({ items: batch, no_cache: NO_CACHE }),
+      // 모델을 명시로 넘긴다. 예전에는 안 넘겨서 --models=a,b 비교가 edge 백엔드에서는
+      // 둘 다 CLASSIFY_MODEL 시크릿 하나로 돌아갔다 (라벨만 meta 로 맞아 보였다).
+      body: JSON.stringify({ items: batch, no_cache: NO_CACHE, model: MODEL }),
       signal: AbortSignal.timeout(600_000),
     })
     const data = await res.json()
@@ -219,14 +222,10 @@ async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<Classif
           return !s || !allowed.get(it.id)?.has(s.hts_code)
         })
         if (strays.length > 0) {
+          // 재시도 프롬프트는 pipeline.ts 한 벌만 쓴다 — Edge Function 과 문구가
+          // 어긋나면 러너가 재는 파이프라인이 배포본과 달라진다
           const retry = parseStageB(
-            await anthropicJson(
-              STAGE_B_SYSTEM,
-              `${questions}\n\nYour previous answer used codes that were NOT in the catalog for: ${strays
-                .map((s) => s.id)
-                .join(', ')}. Return ONLY codes copied exactly from the catalog sections allowed for each product.`,
-              catalog,
-            ),
+            await anthropicJson(STAGE_B_SYSTEM, stageBRetryPrompt(questions, strays.map((s) => s.id)), catalog),
           )
           for (const s of strays) {
             const r = retry.get(s.id)
@@ -275,18 +274,34 @@ async function classifyViaAnthropic(items: ClassifyItemInput[]): Promise<Classif
   return out
 }
 
-// ── 계획서 §검증1 잠정 정답 (6자리) ──────────────────────────────
-const TARGETS: Record<string, { six: string[]; note: string }> = {
-  'MUG-01': { six: ['691200'], note: '도자기(자기 아님) 식탁용품' },
-  'BAG-01': { six: ['420292'], note: '직물제 백팩' },
-  'TUM-01': { six: ['961700'], note: '함정 문항 — 진공 단열용기. 7323 오분류 잦음' },
-  'LMP-01': { six: ['940521', '940529'], note: 'LED 테이블 램프 (9405.2x)' },
-  'TSH-01': { six: ['610910'], note: '면 니트 티셔츠' },
-  'SPK-01': { six: ['851822', '851762'], note: '논쟁 품목 — 판례가 갈림' },
-  'MAT-01': { six: ['950691'], note: '운동용구 판례 존재 (3926 아님)' },
-  'BRD-01': { six: ['441911'], note: '대나무 도마 (v1 의 4419.12 = 젓가락 오답 정정)' },
-  'CSE-01': { six: ['392690'], note: '플라스틱 제품 기타' },
-  'UTL-01': { six: ['392410'], note: '플라스틱(실리콘) 주방용품' },
+// ── 계획서 §검증1 잠정 정답 ──────────────────────────────────────
+/**
+ * **채점 기준은 8자리다** (v4 에서 6자리 → 8자리로 변경).
+ *
+ * 6자리 채점은 duty 정확도를 보장하지 않는다. 세율은 8자리에서 갈리기 때문이다:
+ *
+ *   6912.00.10 조질 도기      0.7%
+ *   6912.00.44 머그·스타인   10.0%   ← 같은 691200, 세율 14배
+ *
+ * 6자리만 맞히고 8자리를 틀리면 관세가 통째로 틀린다. 실제로 러너의 예전
+ * `resolveTargetCode` 가 정확히 이 함정에 빠져 6912.00.10 을 집었고, 원장이
+ * 50줄일 때는 후보가 하나뿐이라 드러나지 않았다. 전체 카탈로그를 넣고 나서야
+ * 보였다 — 골든 테스트가 존재하는 이유가 이것이다.
+ *
+ * `eight` 는 세율 결정 단위, `six` 는 진단용(근접 오답과 완전 오답 구분)으로 남긴다.
+ * 최종 확정은 CBP CROSS 몫이며, 아래는 여전히 잠정값이다.
+ */
+const TARGETS: Record<string, { eight: string[]; six: string[]; note: string }> = {
+  'MUG-01': { eight: ['69120044'], six: ['691200'], note: '머그·스타인. 같은 소호의 조질도기(.10, 0.7%)와 세율 14배 차이' },
+  'BAG-01': { eight: ['42029231'], six: ['420292'], note: '인조섬유 백팩. 같은 소호의 음료파우치(.04, 7.0%)와 갈림' },
+  'TUM-01': { eight: ['96170010'], six: ['961700'], note: '함정 — 진공용기 ≤1L (20oz≈0.6L). 7323 오분류 잦음' },
+  'LMP-01': { eight: ['94052160'], six: ['940521', '940529'], note: 'LED·비금속(황동 외)·가정용. 황동이면 .40 으로 갈림' },
+  'TSH-01': { eight: ['61091000'], six: ['610910'], note: '면 니트 티셔츠. 8자리가 소호와 동일 — 8자리 채점이 무료' },
+  'SPK-01': { eight: ['85182200', '85176200'], six: ['851822', '851762'], note: '논쟁 품목 — 판례가 갈려 둘 다 인정' },
+  'MAT-01': { eight: ['95069100'], six: ['950691'], note: '운동용구. 8자리가 소호와 동일' },
+  'BRD-01': { eight: ['44191100'], six: ['441911'], note: '대나무 도마. 8자리가 소호와 동일' },
+  'CSE-01': { eight: ['39269099'], six: ['392690'], note: '플라스틱 기타 바스켓' },
+  'UTL-01': { eight: ['39241040'], six: ['392410'], note: '플라스틱 주방용품 기타. 식기류(.20)와 갈림' },
 }
 /**
  * 시나리오 B 조회 코드 — **명시적 10자리**.
@@ -415,12 +430,33 @@ const SAMPLE_ROWS = new Set(LEDGER.filter((r) => r.source === 'SAMPLE').map((r) 
 const usd = (n: number, d = 4) => `$${n.toFixed(d)}`
 const pct = (n: number) => `${(n * 100).toFixed(2)}%`
 
-/** 후보 안에 정답 6자리 프리픽스가 있는가 (§검증1 통과 기준) */
-function hitsTarget(cands: HtsCandidate[], six: string[]): { hit: boolean; rank: number | null } {
+/** 후보 안에 정답 프리픽스가 있는가. `prefixes` 자릿수가 곧 채점 단위(8=세율, 6=소호, 4=호) */
+function hitsTarget(cands: HtsCandidate[], prefixes: string[]): { hit: boolean; rank: number | null } {
   for (let i = 0; i < cands.length; i++) {
-    if (six.some((s) => normalizeHts(cands[i].hts_code).startsWith(s))) return { hit: true, rank: i + 1 }
+    if (prefixes.some((s) => normalizeHts(cands[i].hts_code).startsWith(s))) return { hit: true, rank: i + 1 }
   }
   return { hit: false, rank: null }
+}
+
+/** 원장의 base_mfn 세율 (정확 10자리 조회). 없으면 null */
+function mfnRateOf(code: string): number | null {
+  const n = normalizeHts(code)
+  const row = LEDGER.find((r) => r.program_code === 'mfn' && normalizeHts(r.hts_code) === n)
+  return row ? row.ad_valorem_rate : null
+}
+
+/**
+ * 원장에서 특정 프리픽스 아래 base_mfn 세율의 폭을 잰다.
+ *
+ * "8자리로 채점해야 한다"는 주장을 숫자로 증명하기 위한 것 — 소호(6자리) 아래
+ * 세율이 넓게 흩어져 있다면 6자리 적중은 duty 를 전혀 보장하지 못한다.
+ */
+function rateSpread(prefix: string): { min: number; max: number; lines: number } | null {
+  const rates = LEDGER.filter(
+    (r) => r.program_code === 'mfn' && normalizeHts(r.hts_code).startsWith(prefix),
+  ).map((r) => r.ad_valorem_rate)
+  if (rates.length === 0) return null
+  return { min: Math.min(...rates), max: Math.max(...rates), lines: rates.length }
 }
 
 /** 프로그램 권한(authority)별 실제 가산율. 레이어 개념은 프로그램으로 대체됐다. */
@@ -523,9 +559,9 @@ async function main() {
   const gatedRuns = allRuns.map(gate)
   const gated = gatedRuns[0]
 
-  /** 실행 1건의 6자리 적중 SKU 집합 */
+  /** 실행 1건의 **8자리** 적중 SKU 집합 (v4 채점 단위) */
   const hitSet = (gs: ReturnType<typeof gate>) =>
-    new Set(gs.filter((g) => TARGETS[g.sku] && hitsTarget(g.candidates, TARGETS[g.sku].six).hit).map((g) => g.sku))
+    new Set(gs.filter((g) => TARGETS[g.sku] && hitsTarget(g.candidates, TARGETS[g.sku].eight).hit).map((g) => g.sku))
   const runHitSets = gatedRuns.map(hitSet)
   const runScores = runHitSets.map((s) => s.size)
 
@@ -582,20 +618,39 @@ async function main() {
   }
 
   // ── §검증1 채점 ──────────────────────────────────────────────
+  // 채점 단위는 **8자리**. 6자리·4자리는 "얼마나 근접했나"를 보는 진단 지표로만 쓴다.
   const scored = gated.map((g) => {
     const t = TARGETS[g.sku]
-    const { hit, rank } = t ? hitsTarget(g.candidates, t.six) : { hit: false, rank: null }
-    // 4자리(호) 단위 적중 — 소호만 틀린 "근접 오답"과 완전 오답을 구분한다
+    const { hit, rank } = t ? hitsTarget(g.candidates, t.eight) : { hit: false, rank: null }
+    const sub = t ? hitsTarget(g.candidates, t.six) : { hit: false, rank: null }
     const head = t ? hitsTarget(g.candidates, t.six.map((s) => s.slice(0, 4))) : { hit: false, rank: null }
-    return { ...g, target: t, hit, rank, headHit: head.hit }
+    // 소호는 맞혔는데 8자리를 틀린 건 = duty 가 조용히 틀리는 구간
+    const chosenRate = g.chosen !== null ? mfnRateOf(g.chosen) : null
+    const answerRate = t ? mfnRateOf(SCENARIO_B[g.sku]?.code ?? '') : null
+    return {
+      ...g,
+      target: t,
+      hit,
+      rank,
+      subHit: sub.hit,
+      headHit: head.hit,
+      chosenRate,
+      answerRate,
+      rateGap: chosenRate !== null && answerRate !== null ? chosenRate - answerRate : null,
+    }
   })
   const hits = scored.filter((s) => s.hit).length
+  const subHits = scored.filter((s) => s.subHit).length
   const headHits = scored.filter((s) => s.headHit).length
   const nearMiss = scored.filter((s) => s.headHit && !s.hit)
+  /** 소호는 맞고 8자리는 틀린 건 — 예전 채점 기준이 "정답"으로 셌던 구간 */
+  const subOnly = scored.filter((s) => s.subHit && !s.hit)
   const trapHits = scored.filter((s) => TRAP_SKUS.includes(s.sku) && s.hit).length
 
-  // 자동확정됐지만 6자리가 틀린 건 — §1-3 안전판이 걸러내지 못한 오분류
-  const wrongButConfident = scored.filter((s) => s.status !== 'user_confirmed' && !s.hit)
+  // 오답을 두 갈래로 나눈다. 위험한 쪽은 "사람이 확인했는데 틀린" 것이고,
+  // 리뷰 대기 중인 오답은 안전판이 제 일을 한 것이다.
+  const wrongConfirmed = scored.filter((s) => s.status === 'user_confirmed' && !s.hit)
+  const wrongPending = scored.filter((s) => s.status !== 'user_confirmed' && !s.hit)
 
   // 후보 10자리가 원장 base_mfn 행으로 해석되는가 (duty 조회 가능 여부)
   const ledgerBase = LEDGER.filter((r) => r.layer === 'base_mfn')
@@ -610,25 +665,30 @@ async function main() {
     const gs = pm.runs.map(gate)
     const hitSets = gs.map(hitSet)
     const scores = hitSets.map((s) => s.size)
-    // 오답 중 needs_review 로 격리된 비율 — 안전판이 실제로 작동하는가
+    // 오답 중 리뷰 큐로 격리된 비율 — 안전판이 실제로 작동하는가.
+    //
+    // 격리 = 사람 확인 대기(suggested/pending)로 남았다는 뜻이다. 예전 코드는
+    // 이걸 `status === 'user_confirmed'` 로 세고 있었다 — 정확히 반대라서,
+    // 자동확정이 사라진 v3 이후로는 모든 오답이 "격리 실패 + 자동확정"으로
+    // 보고됐다. 실제로는 그 반대(전부 격리됨)였다.
     let wrong = 0
     let wrongIsolated = 0
-    let autoConfirmed = 0
+    let pendingReview = 0
     let unanimousCount = 0
     let outOfOptions = 0
     let total = 0
     for (const g of gs) {
       for (const it of g) {
         total++
-        const isHit = TARGETS[it.sku] ? hitsTarget(it.candidates, TARGETS[it.sku].six).hit : false
+        const isHit = TARGETS[it.sku] ? hitsTarget(it.candidates, TARGETS[it.sku].eight).hit : false
         // v3 부터 자동확정이 없다 — suggested 는 전부 사람 확인 대기다.
-        // 아래 두 지표는 "확인 없이 그대로 쓰면 어떻게 되는가"를 재는 용도로 남긴다.
-        if (it.status === 'suggested') autoConfirmed++
+        if (it.status === 'suggested' || it.status === 'pending') pendingReview++
         if (it.consensus?.unanimous) unanimousCount++
         outOfOptions += it.consensus?.out_of_options ?? 0
         if (!isHit) {
           wrong++
-          if (it.status === 'user_confirmed') wrongIsolated++
+          // 사람 손을 안 거친 상태로 남아 있으면 격리 성공
+          if (it.status !== 'user_confirmed') wrongIsolated++
         }
       }
     }
@@ -647,7 +707,8 @@ async function main() {
       wrong,
       wrongIsolated,
       isolationRate: wrong > 0 ? wrongIsolated / wrong : 1,
-      autoConfirmed,
+      pendingReview,
+      /** 오답인데 사람 확인 없이 확정된 건 — 자동확정이 없으므로 설계상 0 이어야 한다 */
       wrongAutoConfirmed: wrong - wrongIsolated,
       unanimousRate: unanimousCount / total,
       outOfOptions,
@@ -765,7 +826,7 @@ async function main() {
     p()
     p(`파이프라인 v2(2단계 선택형·temperature ${TEMPERATURE}·k=${VOTES} 만장일치), 각 ${RUNS}회 실행.`)
     p()
-    p('| 모델 | 6자리 점수 (평균/범위) | 오답 needs_review 격리율 | 오답인데 자동확정 | 재현성 | 만장일치율 | 보기밖 |')
+    p('| 모델 | **8자리** 점수 (평균/범위) | 오답 needs_review 격리율 | 오답인데 사람 확인 없이 확정 | 재현성 | 만장일치율 | 보기밖 |')
     p('|---|---|---|---|---|---|---|')
     for (const m of modelStats) {
       p(
@@ -831,21 +892,71 @@ async function main() {
     p()
     p('| 지표 | 값 | 의미 |')
     p('|---|---|---|')
-    p(`| 6자리(소호) 적중 | **${hits}/10** | 채점 기준 |`)
-    p(`| 4자리(호) 적중 | **${headHits}/10** | 큰 분류는 맞히는지 |`)
-    p(`| 근접 오답 (호 O, 소호 X) | **${nearMiss.length}건** | ${nearMiss.map((s) => s.sku).join(', ') || '없음'} |`)
+    p(`| **8자리 적중** | **${hits}/10** | **채점 기준 — 세율이 갈리는 단위** |`)
+    p(`| 6자리(소호) 적중 | ${subHits}/10 | 진단용. 예전 채점 기준 |`)
+    p(`| 4자리(호) 적중 | ${headHits}/10 | 큰 분류는 맞히는지 |`)
     p(
-      `| 자동확정됐는데 오답 | **${wrongButConfident.length}/10** | §1-3 안전판을 빠져나간 오분류 — 낮을수록 좋다 |`,
+      `| **소호 O, 8자리 X** | **${subOnly.length}건** | ${subOnly.map((s) => s.sku).join(', ') || '없음'} — 예전 기준이 정답으로 셌지만 duty 는 틀린 건 |`,
     )
+    p(`| 근접 오답 (호 O, 소호 X) | ${nearMiss.length}건 | ${nearMiss.map((s) => s.sku).join(', ') || '없음'} |`)
+    // 자동확정은 v3 에서 없앴다. "확정됐는데 오답"은 사람이 확인한 것만 세야 한다 —
+    // 예전 코드는 리뷰 대기 중인 오답까지 세서 0 이어야 할 칸에 숫자가 찍혔다.
+    p(
+      `| 오답인데 사람 확인 없이 확정 | **${wrongConfirmed.length}/10** | 자동확정이 없으므로 0 이어야 한다 |`,
+    )
+    p(`| 오답 (전부 리뷰 대기) | ${wrongPending.length}/10 | ${wrongPending.map((s) => s.sku).join(', ') || '없음'} |`)
     p(`| needs_review 로 격리 | **${gated.filter((g) => g.status === 'suggested').length}/10** | 리뷰 큐로 간 건 |`)
     p(`| 후보당 개수 | 평균 ${(allCands.length / scored.length).toFixed(1)}개 | 스펙 §5 는 2~3개 요구 |`)
     p(`| 통계 suffix 가 0000 | ${zeroPadded}/${allCands.length} | 10자리를 0 으로 채운 정황 |`)
     p(`| 원장 base_mfn 으로 해석 가능 | ${resolvable}/${allCands.length} | duty 조회가 실제로 되는 후보 수 |`)
     p()
 
+    // ── 왜 8자리로 채점해야 하는가 (원장 숫자로 증명) ──────────────
+    p('### 채점 단위를 8자리로 바꾼 이유')
+    p()
+    p('소호(6자리)를 맞혀도 세율은 보장되지 않는다. 소호 아래 8자리 라인들의 MFN 세율 폭:')
+    p()
+    p('| SKU | 정답 소호 | 소호 아래 라인 수 | MFN 세율 폭 | 정답 8자리 세율 | 6자리 적중이 duty 를 보장하나 |')
+    p('|---|---|---|---|---|---|')
+    for (const s of scored) {
+      if (!s.target) continue
+      const six = s.target.six[0]
+      const sp = rateSpread(six)
+      const ans = mfnRateOf(SCENARIO_B[s.sku]?.code ?? '')
+      const guaranteed = sp === null || sp.min === sp.max
+      p(
+        `| ${s.sku} | ${six} | ${sp?.lines ?? '—'} | ${sp ? (sp.min === sp.max ? pct(sp.min) : `${pct(sp.min)} ~ ${pct(sp.max)}`) : '—'} | ${ans !== null ? pct(ans) : '—'} | ${guaranteed ? '예 (라인 1개/동일 세율)' : '**아니오**'} |`,
+      )
+    }
+    p()
+    const splitSkus = scored.filter((s) => {
+      const sp = s.target ? rateSpread(s.target.six[0]) : null
+      return sp !== null && sp.min !== sp.max
+    })
+    p(
+      `**10개 중 ${splitSkus.length}개는 소호를 맞혀도 세율이 갈린다** (${splitSkus.map((s) => s.sku).join(', ') || '없음'}). ` +
+        '이 구간에서 6자리 채점은 "맞았다"고 세지만 관세는 틀린 값이 나간다. 계산식이 정확해도 결과가 틀리므로 8자리가 채점 단위여야 한다.',
+    )
+    p()
+
+    // ── 분류 오답이 실제로 만든 세율 차이 ─────────────────────────
+    const rateGaps = scored.filter((s) => s.rateGap !== null && Math.abs(s.rateGap) > 1e-9)
+    if (rateGaps.length > 0) {
+      p('#### 오답이 만든 세율 차이 (모델 선택 vs 정답)')
+      p()
+      p('| SKU | 모델이 고른 코드 | 그 세율 | 정답 8자리 세율 | 차이 |')
+      p('|---|---|---|---|---|')
+      for (const s of rateGaps) {
+        p(
+          `| ${s.sku} | \`${s.chosen ?? '—'}\` | ${s.chosenRate !== null ? pct(s.chosenRate) : '—'} | ${s.answerRate !== null ? pct(s.answerRate) : '—'} | **${s.rateGap! > 0 ? '+' : ''}${pct(s.rateGap!)}** |`,
+        )
+      }
+      p()
+    }
+
     if (headHits > hits) {
       p(
-        `**핵심 패턴: 호(4자리)는 ${headHits}/10 맞히는데 소호(6자리)는 ${hits}/10 이다.** 큰 갈래는 잡는데 소재·용도로 갈리는`,
+        `**핵심 패턴: 호(4자리) ${headHits}/10 → 소호(6자리) ${subHits}/10 → 8자리 ${hits}/10.** 큰 갈래는 잡는데 소재·용도로 갈리는`,
       )
       p('마지막 한 단계를 못 좁힌다. 계획서가 지목한 "소재·용도 필드 활용 강화"가 정확히 이 지점이다.')
       p()
@@ -859,13 +970,13 @@ async function main() {
       p()
     }
 
-    if (wrongButConfident.length > 0) {
-      p('**confidence 가 신호 역할을 못 한다.** 아래는 자동확정(≥0.7)됐지만 6자리가 틀린 건이다.')
+    if (wrongConfirmed.length > 0) {
+      p("**confidence 가 신호 역할을 못 한다.** 아래는 자동확정(≥0.7)됐지만 8자리가 틀린 건이다.")
       p('사용자에게 "확인됨"으로 보이고 리뷰 큐에도 안 간다 — 스펙 §1-3 human-in-the-loop 이 사실상 무력하다.')
       p()
       p('| SKU | 낸 답 | confidence | 정답 |')
       p('|---|---|---|---|')
-      for (const s of wrongButConfident) {
+      for (const s of wrongConfirmed) {
         p(
           `| ${s.sku} | \`${formatHts(s.candidates[0]?.hts_code ?? '')}\` | **${((s.candidates[0]?.confidence ?? 0) * 100).toFixed(0)}%** | \`${s.target!.six[0].slice(0, 4)}.${s.target!.six[0].slice(4)}\` |`,
         )
@@ -903,14 +1014,14 @@ async function main() {
   p()
   p('## §검증2 — 세율·계산 (시나리오 B: 계획서 정답 HTS 확정 가정)')
   p()
-  p('사용자가 리뷰 큐에서 계획서의 정답 6자리를 골랐다고 가정한 결과. §검증2 대조는 이 표를 쓴다.')
+  p('사용자가 리뷰 큐에서 정답 라인을 골랐다고 가정한 결과. §검증2 대조는 이 표를 쓴다.')
   p()
-  p('<details><summary>정답 6자리 → 확정 10자리 (근거)</summary>')
+  p('<details><summary>정답 8자리 → 확정 10자리 (근거)</summary>')
   p()
-  p('| SKU | 정답(6자리) | 확정 코드 | 근거 |')
+  p('| SKU | 정답(8자리) | 확정 코드 | 근거 |')
   p('|---|---|---|---|')
   for (const [sku, t] of Object.entries(TARGETS)) {
-    p(`| ${sku} | \`${t.six[0]}\` | \`${SCENARIO_B[sku].code}\` | ${SCENARIO_B[sku].via} |`)
+    p(`| ${sku} | \`${t.eight.join('` 또는 `')}\` | \`${SCENARIO_B[sku].code}\` | ${SCENARIO_B[sku].via} |`)
   }
   p()
   p('</details>')

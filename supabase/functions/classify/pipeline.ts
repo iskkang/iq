@@ -144,6 +144,24 @@ export interface StageBPrompt {
  *
  * 호출부는 catalog 블록에 `cache_control` 을 걸고 questions 를 그 뒤에 붙인다.
  */
+/**
+ * 보기 밖 코드가 나왔을 때의 재시도 프롬프트 (요구사항 1: 재시도 1회).
+ *
+ * **원래 questions 를 그대로 앞에 붙여야 한다.** 지적만 보내면 모델에게 보기가
+ * 사라져 다시 자유 생성으로 돌아간다. 호출부는 catalog 를 cached 인자로 함께
+ * 넘겨 프롬프트 캐시 프리픽스도 유지할 것.
+ *
+ * Edge Function 과 골든 러너가 각자 문자열을 만들다 실제로 어긋났다 —
+ * Edge 쪽은 정의되지 않은 변수를 참조해 재시도 경로가 통째로 죽어 있었고,
+ * 러너는 로컬 파이프라인을 쓰므로 그 버그를 못 잡았다. 그래서 여기 한 벌만 둔다.
+ */
+export function stageBRetryPrompt(questions: string, strayIds: string[]): string {
+  return `${questions}
+
+Your previous answer used codes that were NOT in the option list for: ${strayIds.join(', ')}.
+Return ONLY codes copied exactly from each product's OPTIONS block.`
+}
+
 export function stageBPrompt(
   items: ClassifyInput[],
   stageA: Map<string, StageAResult>,

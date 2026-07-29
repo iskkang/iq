@@ -53,6 +53,38 @@ export function ShipmentDetailPage() {
     if (fileRef.current) fileRef.current.value = ''
   }
 
+  /**
+   * 큐 작업을 따라가며 도착한 결과를 그때그때 보여준다.
+   *
+   * 2초 간격 — 첫 배치(아이템 10건)가 대략 20~30초에 끝나므로 "첫 결과 60초"
+   * 예산 안에서 화면이 먼저 채워진다. 완료를 기다렸다 한꺼번에 그리지 않는다.
+   *
+   * 최대 15분에서 포기한다. 작업 자체는 서버에서 계속 도므로, 사용자가 나중에
+   * 다시 들어오면 결과가 이미 저장돼 있다.
+   */
+  const pollJob = async (jobId: string, total: number) => {
+    const started = Date.now()
+    const TIMEOUT_MS = 15 * 60_000
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2000))
+      const p = await repo.classificationProgress(jobId)
+      await reload() // 도착한 만큼 먼저 보여준다
+      if (!p) return
+      const doneItems = Math.min(total, (p.done + p.failed) * 10)
+      setClassifying(`${doneItems}/${total}`)
+      if (p.status === 'done') return
+      if (p.status === 'failed') {
+        setErr(`분류 중 ${p.failed}개 배치가 실패했습니다. 실패한 항목은 여전히 미분류 상태입니다.`)
+        return
+      }
+      if (p.status === 'cancelled') return
+      if (Date.now() - started > TIMEOUT_MS) {
+        setErr('분류가 예상보다 오래 걸립니다. 서버에서 계속 처리 중이니 잠시 후 새로고침하세요.')
+        return
+      }
+    }
+  }
+
   const runClassify = async () => {
     if (!id) return
     const targets = items.filter((it) => it.classification_status === 'pending')
@@ -60,6 +92,17 @@ export function ShipmentDetailPage() {
     setClassifying(`0/${targets.length}`)
     setErr(null)
     try {
+      // ── 비동기 경로 (실서버) ───────────────────────────────────
+      // 큐에 넣고 진행률만 본다. 500 SKU 는 10분이 걸리므로 브라우저를 붙잡아
+      // 둘 수 없다. 결과는 아이템 단위로 저장되므로 폴링마다 reload() 하면
+      // 첫 배치부터 화면에 나타난다 — 전부 끝날 때까지 기다리지 않는다.
+      const jobId = await repo.enqueueClassification(id)
+      if (jobId) {
+        await pollJob(jobId, targets.length)
+        return
+      }
+
+      // ── 동기 경로 (데모: 서버가 없다) ──────────────────────────
       const backend: ClassifyBackend =
         repo.mode === 'demo'
           ? { kind: 'mock' }
