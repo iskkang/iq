@@ -178,21 +178,21 @@
           <tbody class="divide-y divide-slate-100"><!-- SAMPLE_ROWS:START -->
             <tr>
               <td class="px-4 py-3 text-left font-medium">MUG-01</td>
-              <td class="px-4 py-3 text-left text-xs text-slate-600">MFN 10% + Section 301 12.5%</td>
+              <td class="px-4 py-3 text-left"><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-700">MFN 10.0%</span><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-rose-100 text-rose-800">301 forced labor +12.5%</span></td>
               <td class="px-4 py-3 font-semibold">$3.50</td>
               <td class="px-4 py-3 text-emerald-600">58.0%</td>
               <td class="px-4 py-3">$6.37</td>
             </tr>
             <tr>
               <td class="px-4 py-3 text-left font-medium">BACKPACK-01</td>
-              <td class="px-4 py-3 text-left text-xs text-slate-600">MFN 17.6% + Section 301 12.5% + Section 301 25%</td>
+              <td class="px-4 py-3 text-left"><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-700">MFN 17.6%</span><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-rose-100 text-rose-800">301 forced labor +12.5%</span><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-amber-100 text-amber-800">301 List 3 +25.0%</span></td>
               <td class="px-4 py-3 font-semibold">$14.68</td>
               <td class="px-4 py-3 text-emerald-600">48.3%</td>
               <td class="px-4 py-3">$26.69</td>
             </tr>
             <tr>
               <td class="px-4 py-3 text-left font-medium">PAN-01</td>
-              <td class="px-4 py-3 text-left text-xs text-slate-600">MFN 2% + Section 301 12.5%</td>
+              <td class="px-4 py-3 text-left"><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-700">MFN 2.0%</span><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-rose-100 text-rose-800">301 forced labor +12.5%</span></td>
               <td class="px-4 py-3 font-semibold">$8.46</td>
               <td class="px-4 py-3 text-emerald-600">51.2%</td>
               <td class="px-4 py-3">$15.37</td>
@@ -300,6 +300,13 @@
   <footer class="border-t border-slate-200 bg-white">
     <div class="mx-auto max-w-3xl px-5 py-8 text-center text-xs text-slate-400">
       <p>Estimates only — not customs, legal, or tax advice. Final HTS classification and duty liability are the responsibility of the importer of record.</p>
+
+      <!-- 고객 0명이라 후기는 못 쓴다. 정직하게 쓸 수 있는 건 만든 사람의 실무 이력이고,
+           관세 도구에서는 그게 후기의 대체재다. -->
+      <p class="mx-auto mb-4 max-w-md text-sm text-slate-500">
+        Built by the team at <b class="text-slate-700">MTL Co., Ltd.</b>, a freight forwarder that files these
+        entries every week. We built it because we were doing this math in spreadsheets for our own clients.
+      </p>
 
       <!-- ═══ 사업자 정보 — Google Ads 심사 요건 (광고주 신원·연락처 확인) ═══ -->
       <address id="business-info" class="mt-3 not-italic leading-relaxed">

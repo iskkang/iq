@@ -23,6 +23,9 @@
   .small{font-size:12px;color:#475569} .ok{color:#059669} .warn{color:#d97706;font-weight:600}
   .note{margin-top:16px;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e}
   footer{margin-top:22px;color:#94a3b8;font-size:11px;line-height:1.6}
+  .chip{display:inline-block;white-space:nowrap;margin:1px 3px 1px 0;padding:2px 6px;border-radius:5px;font-size:11px;font-weight:600}
+  .chip-mfn{background:#f1f5f9;color:#334155} .chip-china{background:#fef3c7;color:#92400e}
+  .chip-fl{background:#ffe4e6;color:#9f1239} .chip-other{background:#f1f5f9;color:#334155}
   .cta{margin-top:26px;padding:20px;background:#fff;border:1px solid #e2e8f0;border-radius:10px}
   .cta h2{font-size:17px;margin:0 0 4px} .cta p{margin:0 0 12px;font-size:13px;color:#475569}
   .cta form{display:flex;gap:8px;flex-wrap:wrap}
@@ -56,7 +59,7 @@
       <tr>
         <td class="l b">MUG-01</td>
         <td class="l mono">6912.00.4400</td>
-        <td class="l small">MFN 10% + Section 301 12.5%</td>
+        <td class="l"><span class="chip chip-mfn">MFN 10.0%</span><span class="chip chip-fl">301 forced labor +12.5%</span></td>
         <td>$2.50</td>
         <td>$0.56</td>
         <td>$0.01</td>
@@ -69,7 +72,7 @@
       <tr>
         <td class="l b">BACKPACK-01</td>
         <td class="l mono">4202.92.3120</td>
-        <td class="l small">MFN 17.6% + Section 301 12.5% + Section 301 25%</td>
+        <td class="l"><span class="chip chip-mfn">MFN 17.6%</span><span class="chip chip-fl">301 forced labor +12.5%</span><span class="chip chip-china">301 List 3 +25.0%</span></td>
         <td>$8.50</td>
         <td>$4.68</td>
         <td>$0.04</td>
@@ -82,7 +85,7 @@
       <tr>
         <td class="l b">PAN-01</td>
         <td class="l mono">7323.93.0060</td>
-        <td class="l small">MFN 2% + Section 301 12.5%</td>
+        <td class="l"><span class="chip chip-mfn">MFN 2.0%</span><span class="chip chip-fl">301 forced labor +12.5%</span></td>
         <td>$6.40</td>
         <td>$0.93</td>
         <td>$0.03</td>
@@ -95,7 +98,7 @@
       <tr>
         <td class="l b">TSHIRT-01</td>
         <td class="l mono">6109.10.0012</td>
-        <td class="l small">MFN 16.5% + Section 301 12.5% + Section 301 7.5%</td>
+        <td class="l"><span class="chip chip-mfn">MFN 16.5%</span><span class="chip chip-fl">301 forced labor +12.5%</span><span class="chip chip-china">301 List 4A +7.5%</span></td>
         <td>$3.20</td>
         <td>$1.17</td>
         <td>$0.02</td>
@@ -108,7 +111,7 @@
       <tr>
         <td class="l b">TUMBLER-01</td>
         <td class="l mono">9617.00.1000</td>
-        <td class="l small">MFN 7.2% + Section 301 12.5%</td>
+        <td class="l"><span class="chip chip-mfn">MFN 7.2%</span><span class="chip chip-fl">301 forced labor +12.5%</span></td>
         <td>$3.10</td>
         <td>$0.61</td>
         <td>$0.01</td>

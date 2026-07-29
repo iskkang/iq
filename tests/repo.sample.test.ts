@@ -51,19 +51,13 @@ describe('ensureSampleShipment', () => {
     }
   })
 
-  it('원산지가 섞여 있어야 한다 (프로그램 차이가 리포트에서 보이도록)', async () => {
-    const origins = new Set(SAMPLE_ITEMS.map((i) => i.origin_country))
-    expect(origins.size).toBeGreaterThan(1)
-  })
-
   /**
-   * 중국은 레거시 301(List 1~4, 최대 25%)이 8자리 목록에 따라 추가로 붙는다.
-   * 그 목록을 원장에 적재하기 전까지 중국산 샘플은 실제 관세를 절반 이하로 표시한다 —
-   * 빠진 게 아니라 오답이다. 목록 적재가 끝나면 이 테스트를 지우고 CN 을 되돌려도 된다.
+   * 원산지는 중국이다. 레거시 301 을 8자리로 적재해 완결 표시가 가능해졌고,
+   * 백팩(List 3)과 머그(List 4B 정지)가 같은 화면에서 다르게 나오는 것이
+   * 첫 인상에서 보여야 할 것이다.
    */
-  it('레거시 301 목록 적재 전까지 샘플에 중국산을 쓰지 않는다', () => {
-    const cn = SAMPLE_ITEMS.filter((i) => i.origin_country === 'CN').map((i) => i.sku)
-    expect(cn, `중국 레거시 301 미적재 상태에서 CN 샘플은 관세를 과소 표시한다: ${cn.join(', ')}`).toEqual([])
+  it('샘플 원산지는 중국이다 (301 리스트가 첫 화면에서 갈리는 걸 보여준다)', () => {
+    expect(new Set(SAMPLE_ITEMS.map((i) => i.origin_country))).toEqual(new Set(['CN']))
   })
 
   it('모든 샘플 SKU 에 현재가가 있어야 마진·권장가 컬럼이 채워진다', () => {

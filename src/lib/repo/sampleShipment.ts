@@ -7,9 +7,9 @@
  *
  * 실제 CSV 업로드와 같은 경로(addItems)를 타므로 별도 코드 경로가 아니다.
  *
- * **원산지에 중국을 쓰지 않는다.** 중국은 레거시 301(List 1~4)이 추가로 붙는데 그 8자리
- * 목록이 아직 원장에 없어, 중국산 샘플은 실제 관세를 절반 이하로 표시하게 된다.
- * 베트남·인도는 강제노동 301 만으로 오늘 기준 완결이다. 목록 적재 후 되돌릴 수 있다.
+ * **원산지는 중국이다.** 레거시 301 리스트를 8자리 단위로 적재했으므로 이제 중국
+ * 관세를 완결로 표시할 수 있고, 리스트별로 결과가 갈리는 게 첫 화면에서 보인다:
+ * 백팩(List 3 +25%)은 3층 스택, 머그(List 4B 정지)는 MFN + 강제노동 301 2층.
  */
 import type { ParsedItemRow } from '../csv/parseItems'
 import type { NewShipment } from './types'
@@ -36,7 +36,7 @@ export const SAMPLE_ITEMS: ParsedItemRow[] = [
     product_name: 'Ceramic coffee mug 11oz',
     description_or_material: 'Glazed stoneware ceramic mug for hot beverages',
     unit_cost_usd: 2.5,
-    origin_country: 'VN',
+    origin_country: 'CN',
     units_per_shipment: 1000,
     weight_kg_per_unit: null,
     current_price_usd: 12.99,
@@ -47,7 +47,7 @@ export const SAMPLE_ITEMS: ParsedItemRow[] = [
     product_name: 'Laptop backpack',
     description_or_material: '100% polyester outer shell with padded straps',
     unit_cost_usd: 8.5,
-    origin_country: 'VN',
+    origin_country: 'CN',
     units_per_shipment: 400,
     weight_kg_per_unit: null,
     current_price_usd: 39.99,
@@ -58,7 +58,7 @@ export const SAMPLE_ITEMS: ParsedItemRow[] = [
     product_name: 'Stainless frying pan 28cm',
     description_or_material: 'Stainless steel kitchen frying pan',
     unit_cost_usd: 6.4,
-    origin_country: 'VN',
+    origin_country: 'CN',
     units_per_shipment: 300,
     weight_kg_per_unit: null,
     current_price_usd: 24.99,
@@ -69,7 +69,7 @@ export const SAMPLE_ITEMS: ParsedItemRow[] = [
     product_name: "Men's crew neck t-shirt",
     description_or_material: '100% cotton knitted short-sleeve t-shirt',
     unit_cost_usd: 3.2,
-    origin_country: 'IN',
+    origin_country: 'CN',
     units_per_shipment: 800,
     weight_kg_per_unit: null,
     current_price_usd: 19.99,
@@ -80,7 +80,7 @@ export const SAMPLE_ITEMS: ParsedItemRow[] = [
     product_name: 'Insulated tumbler 20oz',
     description_or_material: 'Double-wall vacuum insulated stainless steel tumbler with lid',
     unit_cost_usd: 3.1,
-    origin_country: 'VN',
+    origin_country: 'CN',
     units_per_shipment: 600,
     weight_kg_per_unit: null,
     current_price_usd: 24.99,

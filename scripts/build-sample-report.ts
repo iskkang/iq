@@ -73,6 +73,48 @@ const ITEMS: CalcItem[] = [
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
+
+/**
+ * duty 분해를 색 배지로 렌더한다.
+ *
+ * "MFN 17.6% + Section 301 12.5% + Section 301 25%" 는 회색 텍스트로 죽는다.
+ * 이 제품의 유일한 시각적 차별점이 레이어 스택이므로 레이어별로 색을 준다.
+ * 라벨은 짧게 줄이되 어느 프로그램인지 알 수 있게 남긴다.
+ */
+function chipParts(applied: ReturnType<typeof computeShipment>['items'][number]['applied_programs']) {
+  return applied
+    .filter((a) => a.applied_rate > 0)
+    .map((a) => {
+      const pct = fmtPct(a.applied_rate)
+      if (a.program_code === 'mfn') return { label: `MFN ${pct}`, tone: 'mfn' as const }
+      if (a.program_code.startsWith('301-china-list')) {
+        const n = a.program_code.replace('301-china-list', '').toUpperCase()
+        return { label: `301 List ${n} +${pct}`, tone: 'china' as const }
+      }
+      if (a.authority === 'Section 301') return { label: `301 forced labor +${pct}`, tone: 'fl' as const }
+      return { label: `${a.authority} ${pct}`, tone: 'other' as const }
+    })
+}
+
+/** 랜딩용 (Tailwind) */
+const TW: Record<string, string> = {
+  mfn: 'bg-slate-100 text-slate-700',
+  china: 'bg-amber-100 text-amber-800',
+  fl: 'bg-rose-100 text-rose-800',
+  other: 'bg-slate-100 text-slate-700',
+}
+function chipsTw(applied: Parameters<typeof chipParts>[0]) {
+  return chipParts(applied)
+    .map((c) => `<span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium ${TW[c.tone]}">${esc(c.label)}</span>`)
+    .join('')
+}
+/** 샘플 리포트용 (자체 CSS 클래스) */
+function chipsCss(applied: Parameters<typeof chipParts>[0]) {
+  return chipParts(applied)
+    .map((c) => `<span class="chip chip-${c.tone}">${esc(c.label)}</span>`)
+    .join('')
+}
+
 /** 랜딩 "What you get" 표에 넣을 행 수 */
 const LANDING_ROWS = 3
 
@@ -97,7 +139,7 @@ function syncLandingTable(items: ReturnType<typeof computeShipment>['items']) {
       (x) => `
             <tr>
               <td class="px-4 py-3 text-left font-medium">${esc(x.sku)}</td>
-              <td class="px-4 py-3 text-left text-xs text-slate-600">${esc(programBreakdownLabel(x.applied_programs))}</td>
+              <td class="px-4 py-3 text-left">${chipsTw(x.applied_programs)}</td>
               <td class="px-4 py-3 font-semibold">${fmtUsd(round2(x.landed_cost))}</td>
               <td class="px-4 py-3 text-emerald-600">${fmtPct(x.true_margin)}</td>
               <td class="px-4 py-3">${x.recommended_price !== null ? fmtUsd(round2(x.recommended_price)) : '—'}</td>
@@ -123,7 +165,7 @@ function main() {
       return `      <tr>
         <td class="l b">${esc(x.sku)}</td>
         <td class="l mono">${formatHts(x.hts_code)}</td>
-        <td class="l small">${esc(programBreakdownLabel(x.applied_programs))}</td>
+        <td class="l">${chipsCss(x.applied_programs)}</td>
         <td>${fmtUsd(round2(x.unit_cost))}</td>
         <td>${fmtUsd(round2(x.duty_usd))}</td>
         <td>${fmtUsd(round2(x.fees_per_unit))}</td>
@@ -161,6 +203,9 @@ function main() {
   .small{font-size:12px;color:#475569} .ok{color:#059669} .warn{color:#d97706;font-weight:600}
   .note{margin-top:16px;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e}
   footer{margin-top:22px;color:#94a3b8;font-size:11px;line-height:1.6}
+  .chip{display:inline-block;white-space:nowrap;margin:1px 3px 1px 0;padding:2px 6px;border-radius:5px;font-size:11px;font-weight:600}
+  .chip-mfn{background:#f1f5f9;color:#334155} .chip-china{background:#fef3c7;color:#92400e}
+  .chip-fl{background:#ffe4e6;color:#9f1239} .chip-other{background:#f1f5f9;color:#334155}
   .cta{margin-top:26px;padding:20px;background:#fff;border:1px solid #e2e8f0;border-radius:10px}
   .cta h2{font-size:17px;margin:0 0 4px} .cta p{margin:0 0 12px;font-size:13px;color:#475569}
   .cta form{display:flex;gap:8px;flex-wrap:wrap}
