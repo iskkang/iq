@@ -1,0 +1,51 @@
+name: check
+
+# 왜 있는가: 검사 도구는 있었지만 자동으로 도는 게 없어서 매번 기억해야 했다.
+# 그 결과 정의되지 않은 변수를 참조하는 Edge Function 이 프로덕션까지 갔다.
+# 여기서 막는다.
+
+on:
+  push:
+  pull_request:
+
+# 같은 브랜치에 새 커밋이 오면 이전 실행은 취소한다 (큐 낭비 방지)
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20' # 로컬(v20.19.2)과 맞춘다
+          # ~/.npm 캐시에 _npx 도 들어가서 deno 바이너리 재다운로드를 줄인다
+          cache: npm
+
+      - run: npm ci
+
+      # tsc(src) + tsc(scripts·tests) + deno check(Edge) + vitest + oxlint
+      - name: 타입·테스트·린트
+        run: npm run check
+
+      - name: 프로덕션 빌드
+        run: npm run build
+
+      # ── 드리프트 가드 ────────────────────────────────────────────
+      # 랜딩 샘플 표와 샘플 리포트는 실제 계산 엔진이 생성한다. 손으로 고치면
+      # 제품과 어긋나는데, 실제로 두 번 겪었다 — 존재하지 않는 라인의 MFN 9.8%,
+      # 그리고 3-SKU 기준으로 계산한 landed $3.29(엔진값은 $12.56 화물 기준 $3.50).
+      # 재생성 결과가 커밋된 파일과 다르면 실패시킨다.
+      - name: 샘플 표가 엔진 출력과 일치하는가
+        run: |
+          npm run sample:build
+          if ! git diff --exit-code -- index.html public/sample-report.html; then
+            echo "::error::랜딩 샘플 표가 엔진 출력과 다릅니다."
+            echo "::error::index.html 의 SAMPLE_ROWS 블록을 손으로 고치지 마세요."
+            echo "::error::'npm run sample:build' 를 돌리고 결과를 커밋하세요."
+            exit 1
+          fi
