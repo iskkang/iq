@@ -289,21 +289,30 @@ const TARGETS: Record<string, { six: string[]; note: string }> = {
   'UTL-01': { six: ['392410'], note: '플라스틱(실리콘) 주방용품' },
 }
 /**
- * 시나리오 B 조회 코드.
+ * 시나리오 B 조회 코드 — **명시적 10자리**.
  *
- * 정답은 6자리인데 원장의 base_mfn 행은 10자리다. 조회는 프리픽스 매칭
- * (`hts.startsWith(row.hts_code)`)이라 6자리 코드로는 10자리 행에 절대 닿지 않는다.
- * 실제 유저도 리뷰 큐에서 10자리를 고르므로, 정답 6자리 아래에 있는 원장의
- * 가장 구체적인 base_mfn 행 코드로 해석한다. 없으면 6자리 그대로 사용
- * (보충 시드 행이 6자리라 정확히 매칭된다).
+ * 예전에는 정답 6자리 아래의 base_mfn 행 중 "정렬상 첫 번째"를 집었다. 원장이
+ * 50줄일 때는 후보가 하나뿐이라 안 드러났는데, USITC 전체 카탈로그를 넣자
+ * 무관한 라인을 집기 시작했다:
+ *
+ *   691200 → 6912001000 "조질 도기" 0.7%   (실제로는 머그 → 6912.00.44 10.0%)
+ *   420292 → 4202920400 "음료 파우치" 7.0%  (실제로는 백팩 → 4202.92.3120 17.6%)
+ *
+ * 시나리오 B 는 "사용자가 리뷰 큐에서 맞는 코드를 골랐다"는 가정이므로,
+ * 임의 선택이 아니라 **의도적으로 고른 라인**이어야 한다. 각 코드의 근거를
+ * 함께 적어 감사 가능하게 한다. (최종 확정은 CBP CROSS 몫)
  */
-function resolveTargetCode(six: string, ledger: RateRow[]): { code: string; via: string } {
-  const under = ledger
-    .filter((r) => r.layer === 'base_mfn' && r.origin_country === null && normalizeHts(r.hts_code).startsWith(six))
-    .map((r) => normalizeHts(r.hts_code))
-    .sort()
-  if (under.length > 0) return { code: under[0], via: `원장 base_mfn 행 (${under.length}개 중 첫 번째)` }
-  return { code: six, via: '6자리 그대로 (원장에 하위 행 없음)' }
+const SCENARIO_B: Record<string, { code: string; via: string }> = {
+  'MUG-01': { code: '6912004400', via: '6912.00.44 Mugs and other steins — 도자기 머그' },
+  'BAG-01': { code: '4202923120', via: '4202.92.3120 Backpacks (670) — 인조섬유 직물제 백팩' },
+  'TUM-01': { code: '9617001000', via: '9617.00.10 진공용기 ≤1L — 20oz(≈0.6L)' },
+  'LMP-01': { code: '9405216010', via: '9405.21.60 LED 램프·비금속(황동 외)·가정용 — 알루미늄 바디' },
+  'TSH-01': { code: '6109100012', via: "6109.10.00 Men's (338) — 남성 면 니트 티셔츠" },
+  'SPK-01': { code: '8518220000', via: '8518.22.00 동일 인클로저 복수 스피커 — 해당 소호 유일 라인' },
+  'MAT-01': { code: '9506910030', via: '9506.91.00 Other — 운동용구(사이클·로잉머신 외)' },
+  'BRD-01': { code: '4419110000', via: '4419.11.00 도마·빵판 — 해당 소호 유일 라인' },
+  'CSE-01': { code: '3926909989', via: '3926.90.99 Other — 플라스틱 제품 기타' },
+  'UTL-01': { code: '3924104000', via: '3924.10.40 Other — 플라스틱 주방용품' },
 }
 
 const TRAP_SKUS = ['TUM-01', 'SPK-01']
@@ -397,9 +406,6 @@ const LEDGER: RateRow[] = [...USITC_MFN, ...SEED_LAYERS]
 const BASE_LEDGER = USITC_MFN
 const SUPPLEMENT = SEED_LAYERS
 
-const SCENARIO_B: Record<string, { code: string; via: string }> = Object.fromEntries(
-  Object.entries(TARGETS).map(([sku, t]) => [sku, resolveTargetCode(t.six[0], LEDGER)]),
-)
 
 const UNVERIFIED = new Set(
   LEDGER.filter((r) => r.source === 'UNVERIFIED-PLACEHOLDER').map((r) => `${r.program_code}|${r.hts_code}`),
@@ -899,9 +905,9 @@ async function main() {
   p()
   p('사용자가 리뷰 큐에서 계획서의 정답 6자리를 골랐다고 가정한 결과. §검증2 대조는 이 표를 쓴다.')
   p()
-  p('<details><summary>정답 6자리 → 실제 조회 코드 해석</summary>')
+  p('<details><summary>정답 6자리 → 확정 10자리 (근거)</summary>')
   p()
-  p('| SKU | 정답(6자리) | 조회 코드 | 해석 경로 |')
+  p('| SKU | 정답(6자리) | 확정 코드 | 근거 |')
   p('|---|---|---|---|')
   for (const [sku, t] of Object.entries(TARGETS)) {
     p(`| ${sku} | \`${t.six[0]}\` | \`${SCENARIO_B[sku].code}\` | ${SCENARIO_B[sku].via} |`)
