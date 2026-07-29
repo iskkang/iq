@@ -21,7 +21,7 @@
 반드시 바꿀 것** — 문구를 그대로 붙여넣으면 함수가 거부한다.
 
 ```sql
-select public.set_worker_service_key('여기에_실제_service_role_키');
+select ops.set_worker_service_key('여기에_실제_service_role_키');
 ```
 
 `project_url` 은 마이그레이션(0009)이 알아서 넣는다. 프로젝트 주소는 비밀이 아니라
@@ -32,19 +32,29 @@ select public.set_worker_service_key('여기에_실제_service_role_키');
 > (`UNAUTHORIZED_INVALID_JWT_FORMAT`)만 조용히 받았다. `set_worker_service_key()` 는
 > 치환 안 된 값·형식 불일치·잘린 키를 저장 전에 거부한다.
 
+> **운영 함수는 `ops` 스키마에 있다.** `public` 은 PostgREST 가 외부에 노출하는
+> 스키마다. Postgres 기본값이 `EXECUTE TO PUBLIC` 이라 revoke 를 한 번만 잊어도
+> Vault 시크릿에 닿는 함수가 anon key 로 열린다. `ops` 는 노출 대상이 아니라
+> 잊어도 열리지 않는다 — 실측: 이전 후 service_role 로도 REST 에서 404.
+>
+> 대신 이 함수들은 **SQL Editor 에서만** 호출된다. `public` 에 남는 것은
+> `enqueue_classification`(앱이 로그인 사용자로 호출),
+> `complete_classification_task`(Edge Function 이 service_role 로 호출),
+> `is_admin`·`is_workspace_owner`(RLS 정책이 호출자 권한으로 평가) 뿐이다.
+
 ## 설치 확인 — 반드시 거칠 것
 
 이름이나 값이 어긋나도 크론은 정상적으로 돈다. 실패는 `net._http_response` 에만
 남으므로 **자가진단으로 확인해야 한다.**
 
 ```sql
-select public.worker_selftest();
+select ops.worker_selftest();
 --  {"ok": true, "request_id": 1, "endpoint": "https://….supabase.co/functions/v1/classify",
 --   "key_len": 219, "key_looks_like_jwt": true}
 --  ok:false 면 found_names 에 실제 등록된 이름이 나온다
 
 -- 몇 초 뒤, 위에서 받은 request_id 로
-select public.worker_selftest_result(1);
+select ops.worker_selftest_result(1);
 --  {"status_code": 200, "verdict": "정상 — 이름·URL·키 모두 맞다", ...}
 ```
 
@@ -58,7 +68,7 @@ select public.worker_selftest_result(1);
 크론·큐 상태 한눈에:
 
 ```sql
-select public.worker_status();
+select ops.worker_status();
 --  cron_jobs(2개 active) · queue(queued/running/failed) · recent_cron_failures
 ```
 
