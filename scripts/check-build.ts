@@ -23,7 +23,7 @@ function read(rel: string): string | null {
 // index.html 은 %VITE_SUPABASE_URL% 을 빌드 시 치환한다. Vercel 에 env 가 없으면
 // 문자열이 그대로 남고, 랜딩 폼은 존재하지 않는 호스트로 POST 한다 — 이메일이
 // 조용히 사라진다. Formspree 플레이스홀더로 이미 한 번 겪었다.
-for (const f of ['dist/index.html', 'dist/privacy.html', 'dist/app/index.html']) {
+for (const f of ['dist/index.html', 'dist/privacy.html', 'dist/app/index.html', 'dist/sample-report.html']) {
   const html = read(f)
   if (html === null) continue
   const leftover = [...html.matchAll(/%VITE_[A-Z0-9_]+%/g)].map((m) => m[0])
@@ -39,7 +39,7 @@ const PLACEHOLDERS = ['YOUR_FORMSPREE_ID', 'YOUR_DOMAIN.com', 'YOUR_PROJECT', '<
 // 집계하고, 구 이메일은 심사·문의를 받지 못하는 곳으로 보낸다.
 const STALE = ['iq-rose.vercel.app', 'metalogislab@gmail.com']
 
-for (const f of ['dist/index.html', 'dist/privacy.html']) {
+for (const f of ['dist/index.html', 'dist/privacy.html', 'dist/sample-report.html']) {
   const html = read(f)
   if (html === null) continue
   for (const ph of PLACEHOLDERS) {

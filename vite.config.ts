@@ -13,6 +13,7 @@ const root = dirname(fileURLToPath(import.meta.url))
  *   /          index.html      랜딩 (정적, A/B 변형은 /a /b /c)
  *   /app       app/index.html  React SPA (가입·업로드·리포트)
  *   /privacy   privacy.html    개인정보 고지
+ *   /sample-report.html            엔진이 생성한 샘플 리포트 (하단 이메일 폼)
  *
  * 예전에는 index.html 이 SPA 하나뿐이라 landing.html·privacy.html 이 dist 에
  * 들어가지 않았고, vercel.json 이 모든 경로를 SPA 로 rewrite 해서 / 가 곧장
@@ -26,6 +27,7 @@ export default defineConfig({
         landing: resolve(root, 'index.html'),
         app: resolve(root, 'app/index.html'),
         privacy: resolve(root, 'privacy.html'),
+        sampleReport: resolve(root, 'sample-report.html'),
       },
     },
   },

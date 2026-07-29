@@ -52,7 +52,7 @@ jobs:
       - name: 샘플 표가 엔진 출력과 일치하는가
         run: |
           npm run sample:build
-          if ! git diff --exit-code -- index.html public/sample-report.html; then
+          if ! git diff --exit-code -- index.html sample-report.html; then
             echo "::error::랜딩 샘플 표가 엔진 출력과 다릅니다."
             echo "::error::index.html 의 SAMPLE_ROWS 블록을 손으로 고치지 마세요."
             echo "::error::'npm run sample:build' 를 돌리고 결과를 커밋하세요."

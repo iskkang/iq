@@ -21,7 +21,8 @@
     "hts:ch99": "tsx scripts/fetch-ch99.ts",
     "hts:301": "tsx scripts/fetch-301-lists.ts",
     "seed:301": "tsx scripts/seed-301.ts",
-    "sample:build": "tsx scripts/build-sample-report.ts"
+    "sample:build": "tsx scripts/build-sample-report.ts",
+    "demo:record": "tsx scripts/record-demo.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",

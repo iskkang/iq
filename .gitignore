@@ -41,3 +41,6 @@ data/ch99_provisions.json
 # Chapter 99 원문 (13MB PDF + 추출 텍스트) — 재현은 npm run hts:301
 data/hts_ch99.pdf
 data/hts_ch99.txt
+# 데모 녹화 중간 산출물
+data/demo-shots/
+data/demo-video/
