@@ -19,6 +19,7 @@ import { resolvePrograms, exclusionStatus } from '../../../src/lib/calc/programs
 import type { DutyProgram, ProgramExclusion } from '../../../src/lib/calc/programs.ts'
 import type { RateRow } from '../../../src/lib/calc/types.ts'
 import { normalizeHts } from '../../../src/lib/calc/rates.ts'
+import { fetchRates, fetchPrograms, fetchExclusions, fetchFeeRow } from '../../../src/lib/repo/referenceQueries.ts'
 
 const MAX_RESULTS = 20
 const RATE_LIMIT_PER_MIN = 30
@@ -96,40 +97,26 @@ Deno.serve(async (req: Request) => {
     }
     if (lines.length === 0) return json({ as_of: asOf, query: q, results: [], truncated: false })
 
-    // ── 참조 데이터 (앱과 같은 두 갈래 오류 처리) ─────────────────
-    const [{ data: progRows }, { data: exclRows }, { data: feeRows }] = await Promise.all([
-      db.from('duty_programs').select('*'),
-      db.from('program_exclusions').select('*'),
-      db
-        .from('fee_settings')
-        .select('*')
-        .lte('effective_from', asOf)
-        .or(`effective_to.is.null,effective_to.gt.${asOf}`)
-        .order('effective_from', { ascending: false })
-        .limit(1),
+    // ── 참조 데이터: **앱과 같은 쿼리 함수**를 부른다 ────────────
+    // 자체 필터를 짰다가 hts_code=* (전 품목 행) 이 빠져 강제노동 301 이
+    // 통째로 누락됐다. 쿼리가 두 벌이면 한쪽만 고쳐진다.
+    const [ledger, programs, exclusions, fee] = await Promise.all([
+      fetchRates(db as never),
+      fetchPrograms(db as never),
+      fetchExclusions(db as never),
+      fetchFeeRow(db as never, asOf),
     ])
-    const programs = (progRows ?? []) as DutyProgram[]
-    const exclusions = (exclRows ?? []) as ProgramExclusion[]
-    if (programs.length === 0) {
+    if (programs.length === 0 || ledger.length === 0) {
       return json({ error: 'Rate data is not available right now — please contact support@landediq.app.', kind: 'config' }, 503)
     }
-    if ((feeRows ?? []).length === 0) {
+    if (fee === null) {
       const { count } = await db.from('fee_settings').select('*', { count: 'exact', head: true })
       return (count ?? 0) === 0
         ? json({ error: 'Fee data is not available right now — please contact support@landediq.app.', kind: 'config' }, 503)
-        : json({ error: `No fee data covers ${asOf}. Pick a date within the period we have rates for.`, kind: 'coverage' }, 400)
-    }
-
-    // 매칭된 코드에 걸릴 수 있는 원장 행만 가져온다 (전량 로드 금지)
-    const prefixes = [...new Set(lines.map((l) => l.code.slice(0, 8)))]
-    const { data: ledgerRows, error: lErr } = await db
-      .from('rate_ledger')
-      .select('*')
-      .or([`hts_code.eq.*`, ...prefixes.map((p) => `hts_code.like.${p}%`), ...prefixes.map((p) => `hts_code.eq.${p.slice(0, 6)}`)].join(','))
-    if (lErr) throw new Error(`rate_ledger lookup failed: ${lErr.message}`)
-    const ledger = (ledgerRows ?? []) as RateRow[]
-    if (ledger.length === 0) {
-      return json({ error: 'Rate data is not available right now — please contact support@landediq.app.', kind: 'config' }, 503)
+        : json(
+            { error: `No fee data covers ${asOf}. Pick a date within the period we have rates for.`, kind: 'coverage' },
+            400,
+          )
     }
 
     // ── 판정 (앱과 같은 함수) ─────────────────────────────────────
