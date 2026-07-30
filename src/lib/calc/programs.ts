@@ -64,6 +64,37 @@ export interface ProgramExclusion {
  */
 export type ExclusionStatus = 'none' | 'confirmed' | 'unverified'
 
+/**
+ * 리스트 배정 판정 — **면제(ExclusionStatus)와 같은 3값 구조다.**
+ *
+ *   covered      해당 리스트 세율을 적용한다
+ *   not_covered  0% — 목록에 없음이 **확인**됐다 (coverage='enumerated' 의 부재).
+ *                행으로 표현하지 않는다. 행이 없는 것 자체가 이 상태다.
+ *   unresolved   숫자를 정하지 않는다. 0 도 25 도 아니다.
+ *
+ * 왜 0% 가 틀렸나: 확인하지 못한 라인을 0 으로 두면 그 숫자가 랜디드 코스트에
+ * 그냥 더해진다. 경고를 내도 숫자는 이미 틀렸고, 과소계상은 마진을 무너뜨린다.
+ * 확인되지 않은 것은 숫자가 아니라 **상태**다.
+ */
+export type ListResolution = 'covered' | 'not_covered' | 'unresolved'
+
+/**
+ * 숫자를 정하지 못한 프로그램. 합산 대상이 **아니다** —
+ * 이 배열이 비어 있지 않으면 duty 합계는 null 이다.
+ */
+export interface UnresolvedProgram {
+  program_code: string
+  authority: string
+  matched_hts: string
+  /** 근거 인용 (UNVERIFIED-2024-REVIEW 등) — 사용자에게 왜 모르는지 설명한다 */
+  source: string | null
+  /**
+   * 확정되면 취할 수 있는 값의 범위 [최소, 최대].
+   * 이 프로그램이 속한 리스트들의 세율에서 나온다. 화면에 "0% 또는 25%" 로 나간다.
+   */
+  rate_range: [number, number]
+}
+
 export interface AppliedProgram {
   program_code: string
   authority: string
@@ -78,6 +109,13 @@ export interface AppliedProgram {
   /** 면제 판정. unverified 면 부과하되 리포트에 다른 문구로 표시한다 */
   exclusion: ExclusionStatus
 }
+
+/**
+ * 미해결 라인이 확정되면 가질 수 있는 세율 범위.
+ * List 4B(정지) 면 0%, List 1·2·3 이면 25%, List 4A 면 7.5% 다.
+ * 하한이 0 인 이유는 "정말 어느 목록에도 없음" 이 가능하기 때문이다.
+ */
+const CHINA_301_RANGE: [number, number] = [0, 0.25]
 
 /**
  * 발효 구간 판정 — `[from, to)` 반열림. **만료일 당일부터 미적용.**
@@ -151,13 +189,14 @@ export function resolvePrograms(
   hts: string | null,
   origin: string,
   asOf: string,
-): { applied: AppliedProgram[]; total: number } {
+): { applied: AppliedProgram[]; total: number; unresolved: UnresolvedProgram[] } {
   const h = hts ? normalizeHts(hts) : null
   const org = origin.trim().toUpperCase()
   const active = programs.filter((p) => inEffect(p.effective_from, p.effective_to, asOf))
 
   // 프로그램별로 가장 구체적인 원장 행 하나를 고른다
   const picked = new Map<string, { row: RateRow; matchLen: number }>()
+  const unresolvedRows = new Map<string, { row: RateRow; matchLen: number }>()
   for (const row of ledger) {
     const code = row.program_code
     if (!code) continue
@@ -175,6 +214,15 @@ export function resolvePrograms(
       if (h === null) continue
       matchLen = htsMatchLength(row.hts_code, h)
       if (matchLen < 0) continue
+    }
+
+    // **숫자를 정하지 못한 행은 합산 후보에 넣지 않는다.**
+    // 0 으로 더하면 관세가 과소계상되고, 25% 로 더하면 없는 관세를 물린다.
+    // 어느 쪽도 아니므로 별도로 모아 "미해결" 로 보고한다.
+    if (row.resolution === 'unresolved' || row.ad_valorem_rate === null) {
+      const curU = unresolvedRows.get(code)
+      if (!curU || matchLen > curU.matchLen) unresolvedRows.set(code, { row, matchLen })
+      continue
     }
 
     const cur = picked.get(code)
@@ -197,7 +245,8 @@ export function resolvePrograms(
       authority: prog.authority,
       rate_type: prog.rate_type,
       applied_rate: 0,
-      ledger_rate: row.ad_valorem_rate,
+      // 위에서 unresolved 행을 걸렀으므로 여기 도달한 행은 반드시 숫자를 갖는다
+      ledger_rate: row.ad_valorem_rate as number,
       matched_hts: row.hts_code,
       exclusion: exStatus,
       excluded,
@@ -221,7 +270,18 @@ export function resolvePrograms(
     total += t.applied_rate
   }
 
-  return { applied, total }
+  const unresolved: UnresolvedProgram[] = [...unresolvedRows.entries()].map(([code, { row }]) => ({
+    program_code: code,
+    authority: active.find((p) => p.code === code)?.authority ?? code,
+    matched_hts: row.hts_code,
+    source: row.source ?? null,
+    rate_range: CHINA_301_RANGE,
+  }))
+
+  // total 은 **확정된 프로그램만** 더한 값이다. unresolved 가 비어 있지 않으면
+  // 이 숫자는 합계가 아니라 하한이다 — 호출부는 그대로 쓰면 안 된다.
+  // SkuResult.duty_rate_total 이 number | null 인 이유가 이것이다.
+  return { applied, total, unresolved }
 }
 
 /** 리포트용 문자열: "MFN 9.8% + Section 301 12.5%" */

@@ -10,6 +10,24 @@ import { buildReportCsv, downloadCsv } from '../lib/csv/exportReport'
 import { getRepo } from '../lib/repo'
 import type { Item, Shipment } from '../lib/repo/types'
 
+/**
+ * 미해결 SKU 의 숫자 칸.
+ *
+ * 대시(—)나 0 을 넣으면 "관세 없음" 과 구분되지 않는다. 화면에서 눈에 띄어야
+ * 사용자가 이 줄을 통관사에게 물어본다 — 그게 이 상태의 목적이다.
+ * 정확한 범위와 이유는 해당 행의 warnings 에 들어 있다.
+ */
+function UnresolvedCell() {
+  return (
+    <span
+      className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-200"
+      title="Section 301 scope unconfirmed — see the warning for this SKU"
+    >
+      unresolved
+    </span>
+  )
+}
+
 export function ReportView({ shipment, items }: { shipment: Shipment; items: Item[] }) {
   const repo = getRepo()
   const [rates, setRates] = useState<RateRow[] | null>(null)
@@ -122,11 +140,15 @@ export function ReportView({ shipment, items }: { shipment: Shipment; items: Ite
                   )}
                 </td>
                 <td className="px-3 py-2 text-left">{dutyBreakdownLabel(r)}</td>
-                <td className="px-3 py-2">{fmtUsd(round2(r.duty_usd))}</td>
+                <td className="px-3 py-2">
+                  {r.duty_usd === null ? <UnresolvedCell /> : fmtUsd(round2(r.duty_usd))}
+                </td>
                 <td className="px-3 py-2">{fmtUsd(round2(r.fees_per_unit))}</td>
                 <td className="px-3 py-2">{fmtUsd(round2(r.freight_per_unit))}</td>
                 <td className="px-3 py-2">{fmtUsd(round2(r.unit_cost))}</td>
-                <td className="px-3 py-2 font-semibold">{fmtUsd(round2(r.landed_cost))}</td>
+                <td className="px-3 py-2 font-semibold">
+                  {r.landed_cost === null ? <UnresolvedCell /> : fmtUsd(round2(r.landed_cost))}
+                </td>
                 <td className="px-3 py-2">{r.current_price !== null ? fmtUsd(round2(r.current_price)) : '—'}</td>
                 <td className={`px-3 py-2 ${r.true_margin !== null && r.true_margin < 0 ? 'font-medium text-rose-600' : ''}`}>
                   {fmtPct(r.true_margin)}

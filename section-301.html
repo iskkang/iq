@@ -177,7 +177,11 @@
         '<td class="l"><div class="desc">' + esc(r.description) + '</div>' + warns + '</td>' +
         '<td>' + (r.base_mfn === null ? '<span class="desc">n/a</span>' : pct(r.base_mfn)) + '</td>' +
         '<td class="l">' + (chips || '<span class="desc">—</span>') + '</td>' +
-        '<td class="tot">' + pct(r.duty_rate_total) + '</td>' +
+        // 미해결이면 숫자 자리에 숫자를 넣지 않는다. 0% 로 그리면 "관세 없음" 과
+        // 구분되지 않고, 그게 정확히 이 상태가 없애려는 오해다.
+        '<td class="tot">' + (r.duty_rate_total === null
+          ? '<span class="chip chip-301" title="Section 301 scope unconfirmed">unresolved</span>'
+          : pct(r.duty_rate_total)) + '</td>' +
         '</tr>'
     }).join('')
 

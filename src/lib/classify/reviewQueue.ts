@@ -23,7 +23,12 @@ export interface ReviewCandidate {
   headings?: string[]
   consensus?: ClassifyConsensus | null
   /** 단위당 duty USD */
-  duty_per_unit: number
+  /**
+   * null = 301 미해결이라 관세를 확정하지 못했다. **0 으로 넘기지 말 것** —
+   * 관세 영향이 0 인 SKU 로 취급되어 리뷰 큐 맨 아래로 내려간다. 확정하지 못한
+   * 줄이야말로 사람이 봐야 하는 줄이다.
+   */
+  duty_per_unit: number | null
   units: number
   /** 이미 사람이 확인했으면 큐에서 뺀다 */
   reviewed?: boolean
@@ -55,12 +60,15 @@ export function rankReviewQueue(items: ReviewCandidate[]): RankedReviewItem[] {
       const models_disagree =
         it.cross_check_code != null && it.hts_code != null && !sameSubheading(it.hts_code, it.cross_check_code)
       const heading_contested = (it.headings?.length ?? 0) >= 2
-      const duty_total = it.duty_per_unit * it.units
+      // 미해결은 관세 영향을 알 수 없다 → 리뷰 우선순위를 최상으로 둔다.
+      const unresolved_duty = it.duty_per_unit === null
+      const duty_total = it.duty_per_unit === null ? Number.POSITIVE_INFINITY : it.duty_per_unit * it.units
       const reasons: string[] = []
       if (models_disagree) reasons.push(`모델 불일치 (${it.hts_code?.slice(0, 6)} vs ${it.cross_check_code?.slice(0, 6)})`)
       if (heading_contested) reasons.push(`호 경합 (${it.headings!.join(', ')})`)
       if (it.consensus && !it.consensus.unanimous) reasons.push('투표 불일치')
       if (it.consensus && !it.consensus.in_ledger) reasons.push('원장에 base MFN 없음')
+      if (unresolved_duty) reasons.push('301 미해결 — 관세 확정 불가')
       return { ...it, duty_total, models_disagree, heading_contested, reasons, rank: 0 }
     })
 

@@ -493,10 +493,19 @@ function mfnRateOf(code: string): number | null {
  * "8자리로 채점해야 한다"는 주장을 숫자로 증명하기 위한 것 — 소호(6자리) 아래
  * 세율이 넓게 흩어져 있다면 6자리 적중은 duty 를 전혀 보장하지 못한다.
  */
+/**
+ * 미해결(null) 을 표에 쓰는 포매터. 빈칸으로 두면 0 으로 읽히고, 0 을 쓰면
+ * "관세 없음" 과 구분되지 않는다. 골든 문서는 근거 문서라 특히 그렇다.
+ */
+const pctU = (v: number | null) => (v === null ? '_unresolved_' : pct(v))
+const usdU = (v: number | null) => (v === null ? '_unresolved_' : usd(v))
+
 function rateSpread(prefix: string): { min: number; max: number; lines: number } | null {
   const rates = LEDGER.filter(
     (r) => r.program_code === 'mfn' && normalizeHts(r.hts_code).startsWith(prefix),
-  ).map((r) => r.ad_valorem_rate)
+    // 미해결 행(rate null)은 폭 계산에서 뺀다 — 숫자가 없으므로 min/max 에
+    // 참여할 수 없다. 0 으로 치면 폭이 실제보다 넓어 보인다.
+  ).map((r) => r.ad_valorem_rate).filter((v): v is number => v !== null)
   if (rates.length === 0) return null
   return { min: Math.min(...rates), max: Math.max(...rates), lines: rates.length }
 }
@@ -1080,7 +1089,7 @@ async function main() {
       return m === null ? '—' : `${pct(rate)}`
     }
     p(
-      `| ${r.sku} | ${g.origin_country} | \`${r.hts_code}\` | ${lr('base_mfn')} | ${lr('section301')} | ${lr('ieepa_reciprocal')} | **${pct(r.duty_rate_total)}** | ${usd(r.duty_usd)} | ${usd(r.freight_per_unit)} | ${usd(r.mpf_per_unit)} | ${usd(r.hmf_per_unit)} | **${usd(r.landed_cost)}** |`,
+      `| ${r.sku} | ${g.origin_country} | \`${r.hts_code}\` | ${lr('base_mfn')} | ${lr('section301')} | ${lr('ieepa_reciprocal')} | **${pctU(r.duty_rate_total)}** | ${usdU(r.duty_usd)} | ${usd(r.freight_per_unit)} | ${usd(r.mpf_per_unit)} | ${usd(r.hmf_per_unit)} | **${usdU(r.landed_cost)}** |`,
     )
   }
   p()
@@ -1218,6 +1227,15 @@ async function main() {
     p(
       `duty_rate    = ${layerRate(r, 'base_mfn')} + ${layerRate(r, 'section301')} + ${layerRate(r, 'ieepa_reciprocal')} = ${r.duty_rate_total}`,
     )
+    if (r.duty_usd === null || r.landed_cost === null) {
+      // 숫자가 없으면 산식도 없다. 여기서 0 을 넣어 산식을 완성하면 감사 추적이
+      // 거짓이 된다 — 이 문서는 "이 숫자가 어떻게 나왔는가" 를 증명하는 게 목적이다.
+      p(`duty_usd     = UNRESOLVED — Section 301 리스트 배정 미확정, 숫자를 만들지 않는다`)
+      p(`landed_cost  = UNRESOLVED`)
+      p('```')
+      p()
+      continue
+    }
     p(`duty_usd     = ${r.unit_cost} × ${r.duty_rate_total} = ${r.duty_usd.toFixed(6)}`)
     p(
       `freight_unit = ${resultB.totals.freight_pool.toFixed(2)} × ${share.toFixed(8)} / ${r.units} = ${r.freight_per_unit.toFixed(6)}`,
@@ -1288,17 +1306,23 @@ async function main() {
   p('|---|---|---|---|---|---|---|')
   for (const a of resultA.items) {
     const b = resultB.items.find((x) => x.sku === a.sku)!
-    const d = a.landed_cost - b.landed_cost
+    // 한쪽이라도 미해결이면 차이를 말할 수 없다
+    const d = a.landed_cost === null || b.landed_cost === null ? null : a.landed_cost - b.landed_cost
     const g = gated.find((x) => x.sku === a.sku)!
-    const sign = d > 0 ? '+' : ''
+    const sign = d !== null && d > 0 ? '+' : ''
     p(
-      `| ${a.sku} | \`${formatHts(a.hts_code)}\`${g.provisional ? ' (잠정)' : ''} | ${g.status} | ${pct(a.duty_rate_total)} | ${usd(a.duty_usd)} | ${usd(a.landed_cost)} | ${sign}${d.toFixed(4)} (${b.landed_cost > 0 ? `${sign}${((d / b.landed_cost) * 100).toFixed(1)}%` : '—'}) |`,
+      `| ${a.sku} | \`${formatHts(a.hts_code)}\`${g.provisional ? ' (잠정)' : ''} | ${g.status} | ${pctU(a.duty_rate_total)} | ${usdU(a.duty_usd)} | ${usdU(a.landed_cost)} | ${d === null ? '_unresolved_' : sign + d.toFixed(4)} (${d === null || b.landed_cost === null || b.landed_cost <= 0 ? '—' : `${sign}${((d / b.landed_cost) * 100).toFixed(1)}%`}) |`,
     )
   }
   p()
   const maxDelta = resultA.items.reduce((m, a) => {
     const b = resultB.items.find((x) => x.sku === a.sku)!
-    const rel = b.landed_cost > 0 ? Math.abs(a.landed_cost - b.landed_cost) / b.landed_cost : 0
+    // 한쪽이라도 미해결이면 상대 오차를 정의할 수 없다 — 0 으로 두면
+    // "차이 없음" 으로 읽혀 최대 편차 탐색에서 조용히 빠진다.
+    const rel =
+      a.landed_cost === null || b.landed_cost === null || b.landed_cost <= 0
+        ? 0
+        : Math.abs(a.landed_cost - b.landed_cost) / b.landed_cost
     return rel > m.rel ? { sku: a.sku, rel } : m
   }, { sku: '', rel: 0 })
   p(

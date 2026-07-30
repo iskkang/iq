@@ -123,10 +123,19 @@ Deno.serve(async (req: Request) => {
     const byCode = new Map(programs.map((p) => [p.code, p]))
     const results = lines.map((l) => {
       const hts = normalizeHts(l.code)
-      const { applied, total } = resolvePrograms(ledger, programs, exclusions, hts, origin || 'XX', asOf)
+      const { applied, total, unresolved } = resolvePrograms(ledger, programs, exclusions, hts, origin || 'XX', asOf)
       const mfn = applied.find((a) => a.program_code === 'mfn')
 
       const warnings: string[] = []
+      // 미해결은 숫자를 만들지 않는다 — 0 으로 내려보내면 화면이 "관세 없음" 으로
+      // 그린다. 앱 엔진과 같은 규칙이다 (SkuResult.duty_rate_total 이 null 인 것).
+      for (const u of unresolved) {
+        const fmt = (v: number) => `${(v * 100) % 1 === 0 ? (v * 100).toFixed(0) : (v * 100).toFixed(1)}%`
+        warnings.push(
+          `${u.authority} unresolved for this HTS — could be ${fmt(u.rate_range[0])} or ${fmt(u.rate_range[1])}. ` +
+            `The tariff line was restructured and we cannot confirm which list applies (${u.source ?? 'no source'}) — confirm with your broker.`,
+        )
+      }
       for (const a of applied) {
         if (a.exclusion === 'unverified') {
           warnings.push(
@@ -152,7 +161,9 @@ Deno.serve(async (req: Request) => {
             rate_type: a.rate_type,
             exclusion: a.exclusion,
           })),
-        duty_rate_total: total,
+        // null = 미해결. 0 과 구분돼야 한다.
+        duty_rate_total: unresolved.length > 0 ? null : total,
+        unresolved: unresolved.map((u) => ({ program: u.program_code, rate_range: u.rate_range })),
         exclusion_status: origin
           ? applied.reduce<string>(
               (acc, a) => (a.exclusion !== 'none' ? a.exclusion : acc),

@@ -262,7 +262,8 @@ async function main() {
 
   const reportCsv = Papa.unparse(result.items.map((r) => ({
     SKU: r.sku, HTS: formatHts(r.hts_code), Duty: dutyBreakdownLabel(r),
-    DutyUsd: round4(r.duty_usd), Landed: round4(r.landed_cost),
+    DutyUsd: r.duty_usd === null ? 'UNRESOLVED' : round4(r.duty_usd),
+    Landed: r.landed_cost === null ? 'UNRESOLVED' : round4(r.landed_cost),
     Margin: r.true_margin !== null ? round4(r.true_margin) : '',
     Rec: r.recommended_price !== null ? round2(r.recommended_price) : '',
   })))

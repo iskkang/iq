@@ -83,6 +83,13 @@ interface SampleInputs {
   note: string
 }
 
+/**
+ * 미해결 숫자 칸. 0 을 찍으면 "관세 없음" 으로 읽히고, 이 파일은 그대로
+ * 랜딩에 붙는 마케팅 산출물이라 그 오해가 광고까지 간다.
+ */
+const un = (v: number | null, fmt: (n: number) => string) =>
+  v === null ? '<span class="warn">unresolved</span>' : fmt(v)
+
 async function resolveFees(): Promise<FeeSettings> {
   if (MODE === 'refresh') return loadFees(AS_OF)
   // verify: 없으면 **명시적 실패**. 스킵하면 가드가 조용히 사라진다.
@@ -178,7 +185,7 @@ function syncLandingTable(items: ReturnType<typeof computeShipment>['items']) {
             <tr>
               <td class="px-4 py-3 text-left font-medium">${esc(x.sku)}</td>
               <td class="px-4 py-3 text-left">${chipsTw(x.applied_programs)}</td>
-              <td class="px-4 py-3 font-semibold">${fmtUsd(round2(x.landed_cost))}</td>
+              <td class="px-4 py-3 font-semibold">${un(x.landed_cost, (n) => fmtUsd(round2(n)))}</td>
               <td class="px-4 py-3 text-emerald-600">${fmtPct(x.true_margin)}</td>
               <td class="px-4 py-3">${x.recommended_price !== null ? fmtUsd(round2(x.recommended_price)) : '—'}</td>
             </tr>`,
@@ -205,10 +212,10 @@ function main() {
         <td class="l mono">${formatHts(x.hts_code)}</td>
         <td class="l">${chipsCss(x.applied_programs)}</td>
         <td>${fmtUsd(round2(x.unit_cost))}</td>
-        <td>${fmtUsd(round2(x.duty_usd))}</td>
+        <td>${un(x.duty_usd, (n) => fmtUsd(round2(n)))}</td>
         <td>${fmtUsd(round2(x.fees_per_unit))}</td>
         <td>${fmtUsd(round2(x.freight_per_unit))}</td>
-        <td class="b">${fmtUsd(round2(x.landed_cost))}</td>
+        <td class="b">${un(x.landed_cost, (n) => fmtUsd(round2(n)))}</td>
         <td>${x.current_price !== null ? fmtUsd(round2(x.current_price)) : '—'}</td>
         <td class="${neg ? 'warn' : 'ok'}">${fmtPct(x.true_margin)}</td>
         <td>${x.recommended_price !== null ? fmtUsd(round2(x.recommended_price)) : '—'}</td>
@@ -378,7 +385,7 @@ ${rows}
   console.log('── 샘플 리포트 생성 ────────────────────────────')
   for (const x of r.items) {
     console.log(
-      `  ${x.sku.padEnd(12)} ${programBreakdownLabel(x.applied_programs).padEnd(30)} landed ${fmtUsd(round2(x.landed_cost))}`,
+      `  ${x.sku.padEnd(12)} ${programBreakdownLabel(x.applied_programs).padEnd(30)} landed ${x.landed_cost === null ? 'UNRESOLVED' : fmtUsd(round2(x.landed_cost))}`,
     )
   }
   console.log('→ sample-report.html (Vite 입력)')

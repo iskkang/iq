@@ -24,6 +24,12 @@ import { normalizeHts } from './rates'
 import { programBreakdownLabel, resolvePrograms } from './programs'
 import type { DutyProgram, ProgramExclusion } from './programs'
 
+/** 0.25 → "25%" (미해결 경고 문구용) */
+function pct(r: number): string {
+  const v = r * 100
+  return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + '%'
+}
+
 export function trueMargin(
   currentPrice: number,
   landedCost: number,
@@ -100,7 +106,7 @@ export function computeShipment(
     // duty (HTS 미확정 → 0 + 경고)
     const hts = it.hts_code ? normalizeHts(it.hts_code) : null
 
-    const { applied, total } = resolvePrograms(
+    const { applied, total, unresolved } = resolvePrograms(
       ledger,
       ctx.programs,
       ctx.exclusions,
@@ -121,6 +127,10 @@ export function computeShipment(
       const org = it.origin_country.trim().toUpperCase()
       for (const p of inForce) {
         if (applied.some((a) => a.program_code === p.code)) continue
+        // 미해결 프로그램은 여기서 다루지 않는다. 매칭되는 행이 **있고**, 다만
+        // 숫자가 확정되지 않았을 뿐이다 — "treated as 0%" 라고 쓰면 정확히
+        // 우리가 없앤 그 오해를 다시 만든다. 아래 unresolved 루프가 맡는다.
+        if (unresolved.some((u) => u.program_code === p.code)) continue
         // 그 원산지로 적용될 수 있는 행이 원장에 하나라도 있는 프로그램만 기대 대상
         const reachable = ledger.some((r) => {
           if (r.program_code !== p.code) return false
@@ -147,19 +157,24 @@ export function computeShipment(
           )
         }
       }
-      // 매칭은 됐지만 근거가 확정되지 않은 행 — 조용히 0 으로 통과시키지 않는다.
-      // (2024 4년 재검토 인상 라인, note 의 8자리가 현행에서 재편된 라인)
-      for (const r of ledger) {
-        if (!r.source || !r.source.startsWith('UNVERIFIED')) continue
-        if (r.origin_country && r.origin_country.trim().toUpperCase() !== org) continue
-        if (!hts.startsWith(r.hts_code)) continue
+      // 매칭은 됐지만 리스트 배정이 확정되지 않은 행.
+      // 예전에는 "0% 로 처리했다" 고 경고만 했다 — 경고를 내도 **숫자는 이미
+      // 0 으로 합산돼 있었다.** 이제 숫자를 만들지 않는다.
+      for (const u of unresolved) {
+        const [lo, hi] = u.rate_range
         warnings.push(
-          `Section 301 scope unresolved for this HTS (${r.source}) — treated as 0%, duty may be understated`,
+          `${u.authority} unresolved for this HTS — could be ${pct(lo)} or ${pct(hi)}. ` +
+            `The tariff line was restructured and we cannot confirm which list applies ` +
+            `(${u.source ?? 'no source'}). Duty is not calculated for this SKU — confirm with your broker.`,
         )
       }
     }
 
-    const dutyUsd = it.unit_cost_usd * total
+    // **미해결이면 숫자를 만들지 않는다.** 0 으로 두면 랜디드 코스트에 조용히
+    // 합산되고, 사용자는 확정된 값과 구분할 수 없다.
+    const isUnresolved = unresolved.length > 0
+    const dutyRateTotal = isUnresolved ? null : total
+    const dutyUsd = dutyRateTotal === null ? null : it.unit_cost_usd * dutyRateTotal
 
     // 배부 (단위당)
     const freightPerUnit = units > 0 ? (freightPool * allocShare) / units : 0
@@ -167,11 +182,13 @@ export function computeShipment(
     const mpfPerUnit = units > 0 ? (mpfShipment * valueShare) / units : 0
     const hmfPerUnit = units > 0 ? (hmfShipment * valueShare) / units : 0
 
-    const landed = it.unit_cost_usd + dutyUsd + freightPerUnit + mpfPerUnit + hmfPerUnit
+    // duty 가 없으면 랜디드 코스트도 없다 — 마진·권장가도 마찬가지다.
+    // 여기서 0 을 대입하면 "관세가 없는 상품" 과 구분되지 않는다.
+    const landed = dutyUsd === null ? null : it.unit_cost_usd + dutyUsd + freightPerUnit + mpfPerUnit + hmfPerUnit
     const price = it.current_price_usd ?? null
-    const margin = price && price > 0 ? trueMargin(price, landed, shipment.channel_fee_pct) : null
-    const rec = recommendedPrice(landed, shipment.target_margin, shipment.channel_fee_pct)
-    if (rec === null) warnings.push('target margin + channel fee ≥ 100% — recommended price unavailable')
+    const margin = landed !== null && price && price > 0 ? trueMargin(price, landed, shipment.channel_fee_pct) : null
+    const rec = landed === null ? null : recommendedPrice(landed, shipment.target_margin, shipment.channel_fee_pct)
+    if (landed !== null && rec === null) warnings.push('target margin + channel fee ≥ 100% — recommended price unavailable')
 
     return {
       sku: it.sku,
@@ -180,8 +197,9 @@ export function computeShipment(
       unit_cost: it.unit_cost_usd,
       units,
       applied_programs: applied,
-      duty_rate_total: total,
+      duty_rate_total: dutyRateTotal,
       duty_usd: dutyUsd,
+      unresolved_programs: unresolved,
       freight_per_unit: freightPerUnit,
       mpf_per_unit: mpfPerUnit,
       hmf_per_unit: hmfPerUnit,

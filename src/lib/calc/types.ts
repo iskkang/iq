@@ -6,7 +6,7 @@
 export type TransportMode = 'ocean' | 'air'
 export type AllocationBasis = 'value' | 'weight'
 
-import type { AppliedProgram } from './programs.ts'
+import type { AppliedProgram, UnresolvedProgram } from './programs.ts'
 
 /**
  * @deprecated `program_code` 를 쓸 것 (duty_programs 테이블).
@@ -38,8 +38,20 @@ export interface RateRow {
   hts_code: string
   origin_country: string | null
   layer: RateLayer
-  /** ad valorem 소수 (6.5% → 0.065). MVP는 종가세만 지원. */
-  ad_valorem_rate: number
+  /**
+   * ad valorem 소수 (6.5% → 0.065). MVP는 종가세만 지원.
+   *
+   * **null = 숫자를 정하지 않았다** (resolution='unresolved'). 0 이 아니다 —
+   * 0 을 넣으면 어딘가에서 그냥 더해지고 그 사고는 조용하다. null 이면
+   * 컴파일러가 모든 사용처를 찾아준다.
+   */
+  ad_valorem_rate: number | null
+  /**
+   * covered    세율이 확정된 행
+   * unresolved 리스트 배정을 확인하지 못해 숫자를 정하지 않은 행
+   *            (ad_valorem_rate 는 반드시 null — DB CHECK 로 묶여 있다)
+   */
+  resolution?: 'covered' | 'unresolved'
   /** ISO date (YYYY-MM-DD) */
   effective_from: string
   /** null = 현재 유효 */
@@ -103,15 +115,25 @@ export interface SkuResult {
   units: number
   /** 적용된 프로그램과 실제 가산율 (발효일·적용범위·상한보정 근거) */
   applied_programs: AppliedProgram[]
-  duty_rate_total: number
-  /** 단위당 USD */
-  duty_usd: number
+  /**
+   * **null = 301 미해결.** 확정된 프로그램만으로는 합계를 말할 수 없다는 뜻이다.
+   * 0 과 구분해야 한다 — 0 은 "관세 없음이 확인됨" 이다.
+   */
+  duty_rate_total: number | null
+  /** 단위당 USD. duty_rate_total 이 null 이면 여기도 null */
+  duty_usd: number | null
+  /**
+   * 미해결 프로그램. 비어 있지 않으면 duty_rate_total 은 null 이다.
+   * 화면·리포트는 이 목록으로 "0% 또는 25%" 범위를 보여준다.
+   */
+  unresolved_programs: UnresolvedProgram[]
   freight_per_unit: number
   mpf_per_unit: number
   hmf_per_unit: number
   /** mpf + hmf */
   fees_per_unit: number
-  landed_cost: number
+  /** null = duty 가 미해결이라 랜디드 코스트를 확정할 수 없다 */
+  landed_cost: number | null
   current_price: number | null
   /** null = current_price 없음 */
   true_margin: number | null
