@@ -54,7 +54,17 @@ if (ads === null) {
   fail.push('dist/ads.js 가 없다 — 전환 보고가 통째로 빠진다 (public/ads.js 확인)')
 } else {
   if (!ads.includes(ADS_ID)) fail.push(`dist/ads.js: 전환 ID ${ADS_ID} 가 없다`)
-  if (!/signup:\s*'[A-Za-z0-9_-]+'/.test(ads)) fail.push('dist/ads.js: signup 전환 라벨이 비어 있다')
+  // 라벨이 비면 ads.js 가 전송을 아예 건너뛴다 (ID-only 는 어느 액션에도 매핑되지
+  // 않아 기록 자체가 안 되므로). 즉 빈 라벨 = 그 전환은 영구 0 이다. 여기서 막는다.
+  for (const k of ['signup', 'sample']) {
+    if (!new RegExp(`${k}:\\s*(SIGNUP|'[A-Za-z0-9_-]+')`).test(ads)) {
+      fail.push(`dist/ads.js: ${k} 전환 라벨이 비어 있다 — 그 전환은 기록되지 않는다`)
+    }
+  }
+  // ID 만 보내는 경로가 되살아나지 않게 (send_to 는 반드시 ID + '/' + label)
+  if (/send_to:\s*[^,]*\?\s*ID/.test(ads) || /send_to:\s*ID\s*[,}]/.test(ads)) {
+    fail.push('dist/ads.js: 라벨 없이 ID 만 보내는 경로가 있다 — 전환이 기록되지 않는다')
+  }
 }
 // 폼이 있는 페이지는 /ads.js 를 실제로 불러야 한다 (파일만 있고 아무도 안 부르면 같은 결과다)
 for (const f of ['dist/index.html', 'dist/sample-report.html', 'dist/hts.html']) {

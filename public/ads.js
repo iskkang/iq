@@ -16,12 +16,14 @@
 ;(function () {
   var ID = 'AW-18359222502'
 
-  // Ads → 도구 → 전환 에서 만든 액션별 라벨.
-  //   signup : 이메일 가입 (랜딩 히어로·하단 CTA, /sample-report, /hts 공통)
-  //   sample : 랜딩의 "샘플 리포트 보내주세요" 폼. 별도 전환 액션이라 라벨이
-  //            따로 필요하다. 비어 있으면 ID 만 보내 전환은 기록되고 액션
-  //            구분만 빠진다 (조용히 0 이 되지는 않는다).
-  var LABELS = { signup: 'lqxNCILG7NgcEOaBrrJE', sample: '' }
+  // Ads → 도구 → 전환 에서 만든 전환 액션의 라벨.
+  //
+  // ── 왜 액션이 하나인가 ─────────────────────────────────────────
+  // 폼을 나눠도 Google 쪽은 "가입 1건" 만 세면 된다. 입찰이 클릭수 최대화라
+  // 전환 액션을 세분화해도 최적화에 쓰이지 않고, 유입 경로 구분은 leads 테이블의
+  // UTM + page 필드로 이미 하고 있다. 액션을 늘리면 라벨 관리 지점만 늘어난다.
+  var SIGNUP = 'lqxNCILG7NgcEOaBrrJE'
+  var LABELS = { signup: SIGNUP, sample: SIGNUP }
 
   // 한 번 보고한 액션은 다시 보고하지 않는다. 폼이 성공 후 자기 자신을 교체하긴
   // 하지만, 그건 화면 동작이지 보장이 아니다 — 이중 제출이 이중 전환이 되면
@@ -45,12 +47,22 @@
       return
     }
     var label = LABELS[which]
+    // **라벨 없이 보내지 않는다.** send_to 에 ID 만 넣으면 어느 전환 액션에도
+    // 매핑되지 않아 기록 자체가 안 된다 — 리포트에는 전환 0 으로만 보이고,
+    // 태그는 정상 동작 중이라 원인을 찾을 단서가 없다. 가장 나쁜 실패 모양이다.
+    //
+    // 그래서 조용한 no-op 을 금지한다: 콘솔 에러 + Plausible 이벤트로 남긴다.
+    // 콘솔은 아무도 안 본다 — 우리가 실제로 보는 대시보드에 찍혀야 발견된다.
+    if (!label) {
+      console.error('[LandedIQ] 전환 라벨 미설정 (' + which + ') — 전송하지 않음. 이 전환은 기록되지 않습니다.')
+      if (window.plausible) window.plausible('ads_label_missing', { props: { which: which } })
+      return
+    }
     fired[which] = true
     window.gtag('event', 'conversion', {
-      send_to: label ? ID + '/' + label : ID,
+      send_to: ID + '/' + label,
       value: 1.0,
       currency: 'USD',
     })
-    if (!label) console.info('[LandedIQ] 전환 라벨 미설정 — 액션 구분 없이 기록됩니다 (' + which + ')')
   }
 })()
