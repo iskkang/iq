@@ -13,15 +13,13 @@
   window.dataLayer = window.dataLayer || []; function gtag(){ dataLayer.push(arguments) }
   gtag('js', new Date()); gtag('config', 'AW-18359222502')
 </script>
+<!-- 전환 보고는 /ads.js 한 곳에서만 한다 (라벨을 페이지마다 복사하지 않는다) -->
+<script src="/ads.js"></script>
 <script defer data-domain="landediq.app" src="https://plausible.io/js/script.js"></script>
 <script>
   // 랜딩·샘플리포트와 **같은 출처**를 쓴다. Vite 가 빌드 시 VITE_ 접두 변수를 치환한다.
   // public/ 에 두면 치환되지 않으므로 이 파일은 루트에 있어야 한다.
   var CONFIG = { SUPABASE_URL: '%VITE_SUPABASE_URL%', SUPABASE_ANON_KEY: '%VITE_SUPABASE_ANON_KEY%' }
-  // Ads 전환 라벨. 전환 액션을 만든 뒤 **여기만** 채운다 (index.html 의 GOOGLE_ADS 와 같은 역할).
-  // 비어 있으면 send_to 에 ID 만 보낸다 — 태그는 지금도 동작하고 액션별 구분만 나중에 붙는다.
-  // 하드코딩된 send_to 를 세 페이지에 흩어 두면 라벨이 왔을 때 한 곳만 고치고 잊는다.
-  var ADS = { id: 'AW-18359222502', signupLabel: '' }
 </script>
 <style>
   *{box-sizing:border-box} body{margin:0;padding:32px 20px;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#0f172a;background:#f8fafc}
@@ -261,10 +259,9 @@
         })
         if (res.status !== 409 && !res.ok) throw new Error('leads ' + res.status)
         window.plausible && window.plausible('email_signup', { props: { intent: 'hts_lookup', utm_source: p.get('utm_source') || '' } })
-        // 제출이 **성공한 뒤에만** 발생한다 (페이지 로드 시 아님)
-        if (typeof window.gtag === 'function') {
-          window.gtag('event', 'conversion', { send_to: ADS.signupLabel ? ADS.id + '/' + ADS.signupLabel : ADS.id })
-        }
+        // 제출이 **성공한 뒤에만** 발생한다 (페이지 로드 시 아님).
+        // 라벨·중복방지는 /ads.js 한 곳에 있다.
+        window.trackConversion && window.trackConversion('signup')
         done()
       } catch (err) {
         btn.disabled = false

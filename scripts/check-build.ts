@@ -32,6 +32,36 @@ for (const f of ['dist/index.html', 'dist/privacy.html', 'dist/app/index.html', 
   }
 }
 
+// ── 1b. Google Ads 태그 ───────────────────────────────────────────
+// 전환 추적은 틀려도 화면이 멀쩡하다. 로더가 빠지면 전환이 0 으로 보이는데,
+// 그건 "광고가 안 먹힌다" 로 읽혀서 잘못된 결론(예산 중단)까지 간다.
+// 두 번 들어가면 반대로 전환이 부풀 수 있다. 그래서 **정확히 1회**를 본다.
+const ADS_ID = 'AW-18359222502'
+const ADS_LOADER = /googletagmanager\.com\/gtag\/js\?id=AW-18359222502/g
+
+for (const f of ['dist/index.html', 'dist/privacy.html', 'dist/app/index.html', 'dist/sample-report.html', 'dist/hts.html']) {
+  const html = read(f)
+  if (html === null) continue
+  const n = [...html.matchAll(ADS_LOADER)].length
+  if (n !== 1) fail.push(`${f}: gtag 로더가 ${n}회 — 정확히 1회여야 한다`)
+  if (!html.includes(`gtag('config', '${ADS_ID}')`)) fail.push(`${f}: gtag config 에 전환 ID ${ADS_ID} 가 없다`)
+}
+
+// 전환 라벨은 /ads.js 한 곳에만 있다. 이 파일이 빠지면 폼은 정상 동작하면서
+// 전환만 조용히 안 잡힌다 — 페이지 HTML 만 봐서는 알 수 없는 실패다.
+const ads = read('dist/ads.js')
+if (ads === null) {
+  fail.push('dist/ads.js 가 없다 — 전환 보고가 통째로 빠진다 (public/ads.js 확인)')
+} else {
+  if (!ads.includes(ADS_ID)) fail.push(`dist/ads.js: 전환 ID ${ADS_ID} 가 없다`)
+  if (!/signup:\s*'[A-Za-z0-9_-]+'/.test(ads)) fail.push('dist/ads.js: signup 전환 라벨이 비어 있다')
+}
+// 폼이 있는 페이지는 /ads.js 를 실제로 불러야 한다 (파일만 있고 아무도 안 부르면 같은 결과다)
+for (const f of ['dist/index.html', 'dist/sample-report.html', 'dist/hts.html']) {
+  const html = read(f)
+  if (html !== null && !html.includes('/ads.js')) fail.push(`${f}: /ads.js 를 불러오지 않는다 — 전환이 기록되지 않는다`)
+}
+
 // ── 2. 남아 있으면 안 되는 플레이스홀더 ────────────────────────────
 const PLACEHOLDERS = ['YOUR_FORMSPREE_ID', 'YOUR_DOMAIN.com', 'YOUR_PROJECT', '<project-ref>', '[서울 주소']
 

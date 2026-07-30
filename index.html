@@ -1,6 +1,16 @@
 <!doctype html>
 <html lang="en">
 <head>
+  <!-- Google tag (gtag.js) — Google Ads 전환 추적. 페이지당 한 번만. -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18359222502"></script>
+  <script>
+    window.dataLayer = window.dataLayer || []
+    function gtag() { dataLayer.push(arguments) }
+    gtag('js', new Date())
+    gtag('config', 'AW-18359222502')
+  </script>
+  <!-- 전환 보고는 /ads.js 한 곳에서만 한다 (라벨을 페이지마다 복사하지 않는다) -->
+  <script src="/ads.js"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LandedIQ — Know your true margin after tariffs</title>
@@ -34,17 +44,6 @@
       // 치환한다. 치환이 안 되면 saveLead 가 즉시 실패한다 — 조용히 이메일을
       // 잃지 않도록. (주석에 치환 패턴을 그대로 쓰면 Vite 가 그것까지 찾으려다
       //  빌드마다 경고를 낸다. 그래서 여기서는 패턴 대신 말로 적는다.)
-      // Google Ads 전환 추적. 승인 후 Ads → 도구 → 전환 에서 만든 값을 넣는다.
-      //   id           : 'AW-XXXXXXXXXX'
-      //   signupLabel  : 이메일 가입 전환의 라벨 (AW-.../<label> 의 뒷부분)
-      //   sampleLabel  : 샘플 리포트 요청 전환의 라벨
-      // 비어 있으면 태그를 아예 로드하지 않는다 — 쿠키를 심지 않고, 개인정보
-      // 처리방침의 서술과도 어긋나지 않는다. 대신 제출 시 콘솔에 경고를 남긴다
-      // (설정을 잊으면 전환이 조용히 0 이 되는데, 그건 이 저장소가 반복해서
-      //  당한 실패 방식이다).
-      // 라벨은 Ads 에서 전환 액션을 만든 뒤 채운다. 비어 있으면 send_to 에 ID 만
-      // 보내므로 태그는 지금도 동작하고, 액션별 구분만 나중에 붙는다.
-      GOOGLE_ADS: { id: 'AW-18359222502', signupLabel: '', sampleLabel: '' },
       SUPABASE_URL: '%VITE_SUPABASE_URL%',
       SUPABASE_ANON_KEY: '%VITE_SUPABASE_ANON_KEY%',
       VARIANTS: {
@@ -331,36 +330,13 @@
     // 통과시키려면 anon 에게 UPDATE 정책을 열어야 하는데, 그러면 남의 행을
     // 덮어쓸 수 있다. 중복은 409 를 성공으로 취급해 해결한다
     // (unique(email, intent) — 같은 주소가 같은 경로로 다시 눌러도 에러가 아니다).
-    // ── Google Ads 전환 추적 ─────────────────────────────────
-    // 설정돼 있을 때만 스크립트를 넣는다.
-    ;(function loadAds() {
-      const id = CONFIG.GOOGLE_ADS && CONFIG.GOOGLE_ADS.id
-      if (!id) return
-      window.dataLayer = window.dataLayer || []
-      window.gtag = function () { window.dataLayer.push(arguments) }
-      window.gtag('js', new Date())
-      window.gtag('config', id)
-      const sc = document.createElement('script')
-      sc.async = true
-      sc.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(id)
-      document.head.appendChild(sc)
-    })()
-
     /**
-     * 전환 1건 보고. Plausible 이벤트와는 별개다 —
-     * Plausible 은 우리가 보는 지표, 이쪽은 Ads 입찰 최적화에 쓰인다.
+     * 전환 1건 보고. 로더는 <head> 정적 스니펫, 라벨·중복방지는 /ads.js 에 있다.
+     * 히어로 폼 · 하단 CTA 폼 · 샘플 요청 폼이 **모두 이 함수 하나**를 부른다.
      */
     function reportConversion(which) {
-      const cfg = CONFIG.GOOGLE_ADS || {}
-      const label = which === 'sample' ? cfg.sampleLabel : cfg.signupLabel
-      if (!cfg.id) {
-        console.warn('[LandedIQ] Google Ads 태그 미설정 — ' + which + ' 전환이 기록되지 않습니다.')
-        return
-      }
-      if (typeof window.gtag !== 'function') return
-      // 라벨이 오면 AW-xxx/<label> 로 전환 액션까지 구분된다. 아직 없으면 ID 만 보낸다.
-      window.gtag('event', 'conversion', { send_to: label ? cfg.id + '/' + label : cfg.id })
-      if (!label) console.info('[LandedIQ] 전환 라벨 미설정 — 액션 구분 없이 기록됩니다 (' + which + ')')
+      if (typeof window.trackConversion === 'function') window.trackConversion(which)
+      else console.warn('[LandedIQ] /ads.js 미로드 — ' + which + ' 전환이 기록되지 않습니다.')
     }
 
     /** 가입 완료 표시 (정상 제출과 honeypot 경로가 같은 화면을 본다) */
