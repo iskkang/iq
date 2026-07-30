@@ -9,7 +9,7 @@ const FEES: FeeSettings = {
   mpf_min_usd: 33.58,
   mpf_max_usd: 651.50,
   hmf_rate: 0.00125,
-  effective_from: '2024-10-01',
+  effective_from: '2025-10-01',
 }
 
 const PROGRAMS: DutyProgram[] = [
@@ -51,15 +51,15 @@ describe('MPF — 선적 단위 0.3464% + min·max 캡 (스펙 §4)', () => {
   it('min 캡: 소액 선적은 최소 $33.58', () => {
     // 총가액 1,000 → 3.464 → min 33.58
     const r = computeShipment(ship(), [item({ unit_cost_usd: 10, units_per_shipment: 100 })], [], FEES, CTX)
-    expect(r.totals.mpf_shipment).toBeCloseTo(33.58, 2)
-    // 파생값도 함께 움직인다 — 33.58 / 100 units
-    expect(r.items[0].mpf_per_unit).toBeCloseTo(0.3358, 4)
+    expect(r.totals.mpf_shipment).toBeCloseTo(FEES.mpf_min_usd, 2)
+    // 파생 상수를 쓰지 않는다 — min 캡에서 계산. 캡이 바뀌면 자동으로 따라간다
+    expect(r.items[0].mpf_per_unit).toBeCloseTo(FEES.mpf_min_usd / 100, 4)
   })
 
   it('max 캡: 고액 선적은 최대 $651.50', () => {
     // 총가액 500,000 → 1,732 → max 651.50
     const r = computeShipment(ship(), [item({ unit_cost_usd: 5000, units_per_shipment: 100 })], [], FEES, CTX)
-    expect(r.totals.mpf_shipment).toBeCloseTo(651.50, 2)
+    expect(r.totals.mpf_shipment).toBeCloseTo(FEES.mpf_max_usd, 2)
   })
 
   it('MPF는 배부 기준과 무관하게 항상 가액 비중으로 배부', () => {
@@ -69,7 +69,7 @@ describe('MPF — 선적 단위 0.3464% + min·max 캡 (스펙 §4)', () => {
     ]
     const r = computeShipment(ship({ allocation_basis: 'weight', freight_usd: 1000 }), items, [], FEES, CTX)
     const mpf = r.totals.mpf_shipment // 4000×0.003464 → min 캡 33.58
-    expect(mpf).toBeCloseTo(33.58, 2)
+    expect(mpf).toBeCloseTo(FEES.mpf_min_usd, 2)
     expect(r.items[0].mpf_per_unit).toBeCloseTo((mpf * 0.75) / 100, 6)
     expect(r.items[1].mpf_per_unit).toBeCloseTo((mpf * 0.25) / 100, 6)
     // 반면 운임은 중량 비중(10% vs 90%)

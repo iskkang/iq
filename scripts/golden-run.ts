@@ -14,6 +14,7 @@
  * 실행: npm run golden
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { loadFees } from './lib/fees'
 import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, join } from 'node:path'
 import Papa from 'papaparse'
@@ -342,13 +343,9 @@ const SHIP: CalcShipment = {
   channel_fee_pct: 0.15,
   rate_as_of: '2026-07-29',
 }
-const FEES: FeeSettings = {
-  mpf_rate: 0.003464,
-  mpf_min_usd: 33.58,
-  mpf_max_usd: 651.50,
-  hmf_rate: 0.00125,
-  effective_from: '2025-10-01',
-}
+// 수수료는 DB 가 유일한 출처다. 상수를 두면 앱(getFees)과 갈라지고, 그 갈라짐은
+// 숫자가 우연히 같을 때 안 드러난다 (FY2026 때 실제로 그랬다).
+const FEES: FeeSettings = await loadFees(SHIP.rate_as_of)
 
 // ── 원장 로드 (seedRates.ts 는 vite ?raw 의존이라 node 에서 직접 파싱) ──
 function loadLedger(file: string): RateRow[] {

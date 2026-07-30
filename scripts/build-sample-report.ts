@@ -11,6 +11,7 @@
  * 실행: npm run sample:build
  */
 import { writeFileSync, readFileSync } from 'node:fs'
+import { loadFees } from './lib/fees'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { computeShipment } from '../src/lib/calc/engine'
@@ -57,7 +58,8 @@ const LEDGER: RateRow[] = [
   { program_code: '301-fl', hts_code: '*', origin_country: 'IN', layer: 'section301', ad_valorem_rate: 0.10, effective_from: '2026-07-24', effective_to: null },
 ]
 
-const FEES: FeeSettings = { mpf_rate: 0.003464, mpf_min_usd: 33.58, mpf_max_usd: 651.50, hmf_rate: 0.00125, effective_from: '2025-10-01' }
+// DB 가 유일한 출처 — 상수 폴백 없음
+const FEES: FeeSettings = await loadFees(AS_OF)
 const SHIP: CalcShipment = {
   freight_usd: 2000, insurance_usd: 100, mode: 'ocean', allocation_basis: 'value',
   target_margin: 0.3, channel_fee_pct: 0.15, rate_as_of: AS_OF,

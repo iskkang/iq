@@ -14,6 +14,7 @@
  *   npm run bench -- --sample=10  # A + B (10 SKU 실호출 후 외삽)
  */
 import { readFileSync, existsSync } from 'node:fs'
+import { loadFees } from './lib/fees'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import Papa from 'papaparse'
@@ -22,7 +23,7 @@ import type { ProgramContext } from '../src/lib/calc/engine'
 import type { DutyProgram } from '../src/lib/calc/programs'
 import { round2, round4 } from '../src/lib/calc/money'
 import { formatHts } from '../src/lib/calc/rates'
-import type { CalcItem, FeeSettings, RateLayer, RateRow } from '../src/lib/calc/types'
+import type { CalcItem, RateLayer, RateRow } from '../src/lib/calc/types'
 import { classifyItems } from '../src/lib/classify/client'
 import { resolveStatus } from '../src/lib/classify/status'
 import { parseItemsCsv } from '../src/lib/csv/parseItems'
@@ -106,13 +107,7 @@ function loadProgramCtx(): ProgramContext {
 
 const PROGRAM_CTX = loadProgramCtx()
 
-const FEES: FeeSettings = {
-  mpf_rate: 0.003464,
-  mpf_min_usd: 33.58,
-  mpf_max_usd: 651.50,
-  hmf_rate: 0.00125,
-  effective_from: '2025-10-01',
-}
+const FEES = await loadFees('2026-07-29')
 
 // ── 500행 CSV 생성 ──────────────────────────────────────────
 const NAMES = [
