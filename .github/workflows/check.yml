@@ -49,9 +49,9 @@ jobs:
       # 제품과 어긋나는데, 실제로 두 번 겪었다 — 존재하지 않는 라인의 MFN 9.8%,
       # 그리고 3-SKU 기준으로 계산한 landed $3.29(엔진값은 $12.56 화물 기준 $3.50).
       # 재생성 결과가 커밋된 파일과 다르면 실패시킨다.
-      - name: 샘플 표가 엔진 출력과 일치하는가
+      - name: 샘플 표가 엔진 출력과 일치하는가 (오프라인 verify)
         run: |
-          npm run sample:build
+          npm run sample:verify
           if ! git diff --exit-code -- index.html sample-report.html; then
             echo "::error::랜딩 샘플 표가 엔진 출력과 다릅니다."
             echo "::error::index.html 의 SAMPLE_ROWS 블록을 손으로 고치지 마세요."

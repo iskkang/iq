@@ -10,7 +10,7 @@
  *
  * 실행: npm run sample:build
  */
-import { writeFileSync, readFileSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { loadFees } from './lib/fees'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -58,8 +58,44 @@ const LEDGER: RateRow[] = [
   { program_code: '301-fl', hts_code: '*', origin_country: 'IN', layer: 'section301', ad_valorem_rate: 0.10, effective_from: '2026-07-24', effective_to: null },
 ]
 
-// DB 가 유일한 출처 — 상수 폴백 없음
-const FEES: FeeSettings = await loadFees(AS_OF)
+/**
+ * 두 모드로 나눈다.
+ *
+ *   refresh (기본, 로컬)  DB 에서 수수료를 읽어 HTML 을 만들고, 그때 쓴 입력을
+ *                        sample-report.inputs.json 에 남긴다
+ *   verify  (CI)         커밋된 inputs.json 으로 같은 HTML 을 재생성한다.
+ *                        DB 접속이 필요 없고, 손편집은 git diff 로 그대로 잡힌다
+ *
+ * **inputs.json 은 두 번째 출처가 아니다.** 수수료의 진실 출처는 여전히 DB 이고,
+ * 이 파일은 그 시점 값을 적어둔 fixture 다. 둘이 갈라지는 것은
+ * `npm run sample:check-inputs` 가 감시한다 (DB 접속 가능한 환경에서 실행).
+ *
+ * 이 분리가 필요해진 이유: 수수료를 DB 로 옮기자 CI 의 드리프트 가드가 자격증명을
+ * 요구하게 되어 깨졌다. 가드는 "손으로 고쳤는가" 를 보는 것이지 "DB 값이 맞는가" 를
+ * 보는 게 아니므로, 오프라인으로 돌 수 있어야 한다.
+ */
+const MODE = process.argv.includes('--mode=verify') ? 'verify' : 'refresh'
+const INPUTS = join(root, 'sample-report.inputs.json')
+
+interface SampleInputs {
+  as_of: string
+  fees: FeeSettings
+  note: string
+}
+
+async function resolveFees(): Promise<FeeSettings> {
+  if (MODE === 'refresh') return loadFees(AS_OF)
+  // verify: 없으면 **명시적 실패**. 스킵하면 가드가 조용히 사라진다.
+  if (!existsSync(INPUTS)) {
+    throw new Error(
+      `verify 모드인데 ${INPUTS} 가 없다. 먼저 로컬에서 npm run sample:build 로 생성해 커밋할 것. ` +
+        '없다고 건너뛰면 드리프트 가드가 조용히 사라진다.',
+    )
+  }
+  return (JSON.parse(readFileSync(INPUTS, 'utf-8')) as SampleInputs).fees
+}
+
+const FEES: FeeSettings = await resolveFees()
 const SHIP: CalcShipment = {
   freight_usd: 2000, insurance_usd: 100, mode: 'ocean', allocation_basis: 'value',
   target_margin: 0.3, channel_fee_pct: 0.15, rate_as_of: AS_OF,
@@ -327,6 +363,17 @@ ${rows}
   writeFileSync(join(root, 'sample-report.html'), html, 'utf-8')
 
   syncLandingTable(r.items.slice(0, LANDING_ROWS))
+
+  // refresh 에서만 fixture 를 갱신한다. verify 는 읽기만 한다 —
+  // 그러지 않으면 CI 가 fixture 를 덮어써서 드리프트가 영원히 안 잡힌다. (SampleInputs 기록)
+  if (MODE === 'refresh') {
+    const inputs: SampleInputs = {
+      as_of: AS_OF,
+      fees: FEES,
+      note: 'DB(fee_settings) 에서 읽은 그 시점 값. 진실 출처는 DB 이며 이 파일은 fixture 다. 갱신: npm run sample:build',
+    }
+    writeFileSync(INPUTS, JSON.stringify(inputs, null, 2) + String.fromCharCode(10))
+  }
 
   console.log('── 샘플 리포트 생성 ────────────────────────────')
   for (const x of r.items) {

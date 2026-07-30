@@ -1,0 +1,11 @@
+{
+  "as_of": "2026-07-29",
+  "fees": {
+    "mpf_rate": 0.003464,
+    "mpf_min_usd": 33.58,
+    "mpf_max_usd": 651.5,
+    "hmf_rate": 0.00125,
+    "effective_from": "2025-10-01"
+  },
+  "note": "DB(fee_settings) 에서 읽은 그 시점 값. 진실 출처는 DB 이며 이 파일은 fixture 다. 갱신: npm run sample:build"
+}
