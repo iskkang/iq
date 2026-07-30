@@ -102,9 +102,20 @@ Edge 쪽에 자체 쿼리를 다시 짜 넣으면 조용히 갈라진다.
 
 ### D-2. Google Ads 전환 라벨
 
-지금은 `send_to: 'AW-18359222502'` 로 태그만 보낸다. 라벨이 나오면
-`AW-18359222502/<label>` 로 바꾼다. `hts.html` · `sample-report.html` · `index.html`
-세 곳.
+태그 로더와 전환 이벤트는 세 페이지에 다 들어가 있고 **제출 성공 시에만** 발생한다.
+빠진 것은 라벨뿐이다. 라벨이 비어 있으면 `send_to` 에 ID 만 보내므로 전환은 지금도
+기록되고, 액션별 구분만 안 된다.
+
+라벨이 나오면 **한 페이지당 한 줄**만 고치면 된다:
+
+| 파일 | 채울 곳 |
+|---|---|
+| `index.html` | `GOOGLE_ADS: { …, signupLabel: '', sampleLabel: '' }` |
+| `sample-report.html` | `var ADS = { id: …, signupLabel: '' }` |
+| `hts.html` | `var ADS = { id: …, signupLabel: '' }` |
+
+세 곳에 `send_to` 를 하드코딩해 두면 라벨이 왔을 때 한 곳만 고치고 잊는다 —
+그래서 값을 이름 있는 슬롯 하나로 모아 뒀다.
 
 ### D-3. 데모 영상 캡처
 
