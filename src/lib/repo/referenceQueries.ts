@@ -1,19 +1,9 @@
 /**
- * 참조 데이터 조회 — **앱과 Edge Function 이 같은 코드를 부른다.**
- *
- * /hts Edge Function 이 자체 쿼리를 짰다가 정확히 그 때문에 틀렸다:
- * 원장 필터에 `hts_code = '*'`(전 품목 행) 이 빠져 강제노동 301 이 통째로
- * 누락됐고, 백팩 CN 이 55.1% 대신 42.6% 로 나왔다 — **관세를 과소계상하는
- * 방향**이라 비대칭 원칙상 가장 나쁜 오류다.
- *
- * 쿼리가 두 벌이면 한쪽만 고쳐진다. 그래서 필터 모양을 여기 한 곳에 둔다.
- *
- * 클라이언트를 인자로 받는 이유: 앱은 anon+JWT, Edge 는 service_role 로 만든
- * 클라이언트를 쓴다. 권한은 호출부가 정하고 쿼리 모양만 공유한다.
+ * 참조 데이터 조회 — 앱과 Edge Function 이 같은 코드를 부른다.
  */
-import type { RateRow } from '../calc/types.ts'
+import type { RateRow, FeeSettings } from '../calc/types.ts'
 import type { DutyProgram, ProgramExclusion } from '../calc/programs.ts'
-import type { FeeSettings } from '../calc/types.ts'
+import { normalizeHts } from '../calc/rates.ts'
 
 /** supabase-js 의 최소 형태만 요구한다 (Deno·브라우저 양쪽에서 동작) */
 export interface QueryClient {
@@ -27,10 +17,7 @@ export interface QueryClient {
 
 const PAGE = 1000
 
-/**
- * 원장 전량. 페이지네이션은 PostgREST 기본 상한(1000행) 때문에 필수다 —
- * 빼먹으면 27,000행 중 앞 1,000행만 보게 되고 그 사고는 조용하다.
- */
+/** 앱의 배치 계산용 원장 전량 조회. */
 export async function fetchRates(c: QueryClient): Promise<RateRow[]> {
   const all: RateRow[] = []
   for (let from = 0; ; from += PAGE) {
@@ -43,6 +30,28 @@ export async function fetchRates(c: QueryClient): Promise<RateRow[]> {
     if (rows.length < PAGE) break
   }
   return all
+}
+
+/**
+ * 공개 HTS 조회용 최소 원장 조회.
+ *
+ * 예전 /hts 는 한 번 검색할 때마다 27,000여 행을 전량 페이지네이션했다.
+ * resolvePrograms 가 실제로 필요한 것은 조회된 HTS의 prefix 행과 '*' 전품목 행뿐이다.
+ * 20개 검색 결과라도 후보 코드는 최대 약 160개라 응답 시간이 크게 줄어든다.
+ */
+export async function fetchRatesForHtsCodes(c: QueryClient, codes: string[]): Promise<RateRow[]> {
+  const candidates = new Set<string>(['*'])
+  for (const raw of codes) {
+    const hts = normalizeHts(raw)
+    if (!hts || hts === '*') continue
+    // 원장은 4·6·8·10자리 중심이지만 재편된 중간 prefix도 안전하게 포함한다.
+    for (let len = 4; len <= hts.length; len += 1) candidates.add(hts.slice(0, len))
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const q: any = c.from('rate_ledger').select('*')
+  const { data, error } = await q.in('hts_code', [...candidates])
+  if (error) throw new Error(`Failed to load matching rate rows: ${error.message}`)
+  return (data ?? []) as RateRow[]
 }
 
 export async function fetchPrograms(c: QueryClient): Promise<DutyProgram[]> {
@@ -59,13 +68,7 @@ export async function fetchExclusions(c: QueryClient): Promise<ProgramExclusion[
   return (data ?? []) as ProgramExclusion[]
 }
 
-/**
- * 기준일을 덮는 수수료 행. `[effective_from, effective_to)` 반열림 —
- * 원장·프로그램·면제와 같은 규칙이다.
- *
- * 0행일 때의 두 갈래 판정(config / coverage)은 호출부가 한다. 여기서는
- * 쿼리 모양만 공유한다.
- */
+/** 기준일을 덮는 수수료 행. `[effective_from, effective_to)` 반열림. */
 export async function fetchFeeRow(c: QueryClient, asOf: string): Promise<FeeSettings | null> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const q: any = c.from('fee_settings').select('*')
