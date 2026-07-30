@@ -17,6 +17,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { inEffect } from '../../src/lib/calc/programs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -166,16 +167,36 @@ export function assertOwned(loader: keyof typeof OWNED | string, rows: Array<{ p
  * 왜 보존하는가: 과거 선적을 그 시점 세율로 다시 계산할 수 있어야 하고
  * (클레임 대응), 감사 추적이 남아야 한다.
  */
-const ARCHIVE_SAFE = () => {
-  const today = new Date().toISOString().slice(0, 10)
-  // 열려 있거나(만료 없음) 아직 만료 전인 행만 대상 — 나머지는 아카이브다
-  return `or=(effective_to.is.null,effective_to.gte.${today})`
-}
+/**
+ * 만료 여부 — **날짜 판정은 inEffect 한 곳에만 둔다.**
+ *
+ * 두 벌이 되면 한쪽만 틀린다. 실제로 그랬다: 이 파일의 필터는 `gte`, seed-rates
+ * 의 JS 필터는 `<`, getFees 는 `gt` 를 써서 세 곳이 서로 다른 경계를 썼다.
+ *
+ * 반열림 `[from, to)` 규칙에서 `asOf >= effective_to` 면 이미 만료다. 즉
+ * **effective_to 가 오늘인 행은 오늘 이미 아카이브**이고 삭제 대상이 아니다.
+ * `gte` 를 쓰면 그 행이 하루 동안만 삭제 가능 집합에 들어간다 — 하루짜리라
+ * 잡히지 않고, 그 하루가 하필 FY2027 전환일(2026-10-01) 같은 날이다.
+ */
+export const isArchived = (to: string | null | undefined, today: string): boolean =>
+  typeof to === 'string' && to !== '' && !inEffect('1900-01-01', to, today)
+
+/**
+ * 삭제 대상(= 아직 살아 있는 행) PostgREST 필터.
+ *
+ * **`gt` 다. `gte` 가 아니다** — isArchived 와 같은 경계여야 한다. SQL 문자열이라
+ * inEffect 를 부를 수 없으므로 tests/archive-boundary.test.ts 가 둘의 일치를
+ * 날짜별로 못박는다 (음성 테스트로 gte 회귀가 실제로 잡히는지 확인함).
+ */
+export const archiveSafeFilter = (today: string) => `or=(effective_to.is.null,effective_to.gt.${today})`
+
+const today = () => new Date().toISOString().slice(0, 10)
+const ARCHIVE_SAFE = () => archiveSafeFilter(today())
 
 /** 아카이브(만료) 행 수 — 삭제 전후로 비교해 한 행도 안 사라졌는지 본다 */
 export async function countArchived(): Promise<number> {
-  const today = new Date().toISOString().slice(0, 10)
-  return countRows('rate_ledger', `effective_to=lt.${today}`)
+  // lte — 오늘 만료되는 행도 이미 아카이브다 (archiveSafeFilter 의 gt 와 정확히 보완)
+  return countRows('rate_ledger', `effective_to=lte.${today()}`)
 }
 
 /**

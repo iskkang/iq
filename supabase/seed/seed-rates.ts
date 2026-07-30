@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import Papa from 'papaparse'
-import { OWNED, assertOwned, countRows, deleteOwned, insertRows, verifiedWrite } from '../../scripts/lib/db'
+import { OWNED, assertOwned, countRows, deleteOwned, insertRows, isArchived, verifiedWrite } from '../../scripts/lib/db'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -111,12 +111,15 @@ async function main() {
     if (!owned.includes(String(r.program_code))) return false
     // 만료 행은 아카이브다 — 불변이고 이미 DB 에 있다. 다시 넣으면 중복이 된다.
     // deleteOwned 가 아카이브를 보호하므로 지워지지도 않는다 (설계상 정합).
-    const to = r.effective_to
-    return !(typeof to === 'string' && to < today)
+    // 경계일 주의: 오늘 만료되는 행은 오늘 이미 아카이브다 (반열림 [from, to)).
+    // 판정은 isArchived → inEffect 한 곳에서만 한다.
+    return !isArchived(typeof r.effective_to === 'string' ? r.effective_to : null, today)
   })
   const archived = all.filter((r) => {
-    const to = r.effective_to
-    return owned.includes(String(r.program_code)) && typeof to === 'string' && to < today
+    return (
+      owned.includes(String(r.program_code)) &&
+      isArchived(typeof r.effective_to === 'string' ? r.effective_to : null, today)
+    )
   }).length
   if (archived > 0) console.log(`  아카이브(만료) ${archived}행은 건너뜀 — 만료 행은 불변이다`)
   const dropped = all.length - rates.length - archived
