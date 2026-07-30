@@ -54,31 +54,44 @@ SQL Editor 에서:
 
 
 
-### 반영 절차 — 현행 행의 `effective_to` 는 비워둔다
+### 반영 절차 — 갱신은 "직전 행 닫기 → 신규 insert" 한 트랜잭션
 
-**규칙: 현행 행의 `effective_to` 는 항상 비워두고, 후속 행을 넣는 것과 같은
-트랜잭션에서만 채운다.**
-
-만료를 존중하게 된 뒤 새로 생긴 위험이다. 현행 행에 `effective_to` 만 채우고
-후속 행을 안 넣으면 그 날짜부터 **덮는 행이 하나도 없어져 전 리포트가 멈춘다.**
-FY2027 조정(2026-10-01)이 첫 시험대다.
+**규칙: 현행 행의 `effective_to` 는 평소 비워두고, 갱신은 반드시 한 트랜잭션에서
+`직전 행 닫기 → 신규 insert` 순서로 한다.**
 
 ```sql
 begin;
-  -- 1) 신규 행을 먼저 넣는다
+  -- 1) 직전 행을 먼저 닫는다
+  update public.fee_settings
+     set effective_to = DATE '2026-10-01'
+   where effective_to is null;
+  -- 2) 그 다음에 신규 행을 넣는다
   insert into public.fee_settings (mpf_rate, mpf_min_usd, mpf_max_usd, hmf_rate,
                                    effective_from, source)
-  values (...);
-  -- 2) 그 다음에 직전 행을 닫는다
-  update public.fee_settings
-     set effective_to = <신규 발효일>
-   where effective_to is null and effective_from < <신규 발효일>;
+  values (0.003464, ..., ..., 0.00125, DATE '2026-10-01', '<관보 인용>');
 commit;
 ```
 
-순서도 중요하다 — 신규 행을 **먼저** 넣는다. 반대로 하면 두 문장 사이에 커버
-공백이 생긴다. 같은 규칙이 `rate_ledger` · `duty_programs` · `program_exclusions`
-에도 적용된다.
+**왜 이 순서인가 — 실측으로 확인했다.** 부분 유니크 인덱스(`*_one_open`)가
+`effective_to is null` 인 행을 키당 하나로 강제한다. 이 인덱스는 DEFERRABLE 이
+아니므로(Postgres 는 unique **인덱스** 를 지연할 수 없다 — deferrable 은 constraint
+전용) 트랜잭션 안이라도 문장 단위로 즉시 검사된다. 신규를 먼저 넣으면 그 시점에
+열린 행이 둘이 되어 위반이다:
+
+```
+신규 먼저  → 23505  duplicate key value violates unique constraint "fee_settings_one_open"
+닫고 나서  → 204 → 201  성공
+```
+
+**커버 공백은 걱정하지 않아도 된다.** 한 트랜잭션 안이면 외부 조회는 시작 전
+상태나 완료 후 상태만 본다 — 중간 상태는 관찰되지 않는다. 위험한 것은
+트랜잭션을 쓰지 않는 경우뿐이므로, `begin/commit` 으로 감싸는 것만 지키면 된다.
+
+**닫는 걸 잊는 실수는 제약이 막는다.** 직전 행을 닫지 않고 신규를 넣으면 insert
+자체가 실패하므로, 두 행이 조용히 열려 있는 상태는 원천적으로 불가능하다.
+같은 인덱스가 `rate_ledger`(program_code, hts_code, origin_country) 와
+`program_exclusions`(program_code, hts_code) 에도 있다. `duty_programs` 는
+`code` 가 PK 라 프로그램당 행이 애초에 하나여서 두지 않았다.
 
 ### 열린 항목 — 면제 우선순위 (471개 적재 시 검토)
 
