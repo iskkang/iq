@@ -20,52 +20,18 @@
  *
  * 실행: npm run check:schema (npm run check 에 포함)
  */
-import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
+// 마이그레이션 파서는 check-docs 와 **한 벌만** 쓴다 (scripts/lib/migrations.ts).
+// 사본을 두면 한쪽만 고쳐져 두 검사가 서로 다른 답을 낸다.
+import { collectTables } from './lib/migrations'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const MIG = join(root, 'supabase/migrations')
 const EXCEPTIONS = join(root, 'supabase/reference-tables.exceptions.json')
 
 const REQUIRED = ['effective_from', 'effective_to', 'source'] as const
 
-/** 테이블명 → 컬럼 집합 (create + alter add 를 마이그레이션 순서대로 누적) */
-function collectTables(): Map<string, Set<string>> {
-  const tables = new Map<string, Set<string>>()
-  const files = readdirSync(MIG).filter((f) => f.endsWith('.sql')).sort()
-
-  for (const f of files) {
-    const sql = readFileSync(join(MIG, f), 'utf-8')
-
-    // create table public.X ( ... );
-    for (const m of sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?public\.(\w+)\s*\(([\s\S]*?)\n\)\s*;/gi)) {
-      const cols = new Set<string>()
-      for (const line of m[2].split('\n')) {
-        const t = line.trim()
-        if (!t || t.startsWith('--')) continue
-        // 제약조건 줄은 컬럼이 아니다
-        if (/^(primary|unique|check|foreign|constraint|exclude)\b/i.test(t)) continue
-        const c = t.match(/^"?(\w+)"?\s+/)
-        if (c) cols.add(c[1].toLowerCase())
-      }
-      tables.set(m[1].toLowerCase(), cols)
-    }
-
-    // alter table public.X add column [if not exists] Y ...
-    for (const m of sql.matchAll(/alter\s+table\s+public\.(\w+)\s+add\s+column\s+(?:if\s+not\s+exists\s+)?"?(\w+)"?/gi)) {
-      const t = m[1].toLowerCase()
-      if (!tables.has(t)) tables.set(t, new Set())
-      tables.get(t)!.add(m[2].toLowerCase())
-    }
-
-    // drop table
-    for (const m of sql.matchAll(/drop\s+table\s+(?:if\s+exists\s+)?public\.(\w+)/gi)) {
-      tables.delete(m[1].toLowerCase())
-    }
-  }
-  return tables
-}
 
 /**
  * 참조 데이터 테이블인가 — **화이트리스트가 아니라 규칙으로 판별한다.**

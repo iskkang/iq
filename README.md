@@ -34,6 +34,10 @@ Supabase 환경변수가 없으면 자동으로 데모 모드(인메모리 저�
 | `npm run golden` | 골든 테스트 실행 (`golden-test-products.csv` → `test-results.md`) |
 | `npm run check` | **커밋 전 이것만 돌리면 된다** (push 하면 CI 가 같은 걸 자동 실행) — tsc(src) + tsc(scripts·tests) + deno check(Edge) + vitest + oxlint |
 | `npm run bench` | §6-2 벤치마크 (`--sample=N` 비용, `--concurrency=N` 웨이브 실측) |
+
+> **push 전 자동 실행을 켜려면** `git config core.hooksPath .githooks` 를 한 번 실행한다.
+> 산문으로만 남은 규칙은 어겨진다 — 실제로 연속 두 커밋에서 어겨 CI 를 깨뜨렸다.
+> 긴급 시 `git push --no-verify` 로 우회할 수 있고, CI 가 뒤에서 다시 잡는다.
 | `npm run hts:ch99` | HTSUS Ch.99 → 301·IEEPA 관리자 확정 워크시트 |
 | `npm run hts:fetch` | USITC 공식 HTS 카탈로그 수집 → `data/hts_lines.json` |
 | `npm run hts:seed` | 카탈로그 → Supabase `hts_lines` + `rate_ledger` base MFN |
