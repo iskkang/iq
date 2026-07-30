@@ -1,60 +1,23 @@
 /**
- * Google Ads 전환 보고 — **한 파일, 한 라벨.**
- *
- * ── 왜 공용 파일인가 ─────────────────────────────────────────────
- * 랜딩(히어로·하단 CTA), /sample-report, /hts 가 각자 send_to 를 갖고 있으면
- * 라벨이 바뀔 때 한 곳만 고치고 나머지를 잊는다. 그러면 전환은 계속 기록되는데
- * 액션 구분이 틀어지고, **그 상태는 조용하다** — 이 저장소가 반복해서 당한
- * 실패 방식이다. 그래서 라벨은 이 파일에만 있다.
- *
- * gtag 로더 자체는 각 페이지 <head> 에 그대로 둔다 (구글 표준 스니펫이고,
- * 페이지마다 한 번씩 있어야 한다). 여기서는 **전환 보고만** 맡는다.
- *
- * public/ 에 있으므로 Vite 의 %VITE_% 치환을 받지 않는다. 받을 필요도 없다 —
- * 전환 ID·라벨은 공개 값이고 환경별로 달라지지 않는다.
+ * Google Ads conversion reporting and the shared public-site shell.
+ * Conversion labels stay centralized here; the public IA is also centralized so
+ * the landing page, HTS tool and sample report cannot drift into separate products.
  */
 ;(function () {
   var ID = 'AW-18359222502'
-
-  // Ads → 도구 → 전환 에서 만든 전환 액션의 라벨.
-  //
-  // ── 왜 액션이 하나인가 ─────────────────────────────────────────
-  // 폼을 나눠도 Google 쪽은 "가입 1건" 만 세면 된다. 입찰이 클릭수 최대화라
-  // 전환 액션을 세분화해도 최적화에 쓰이지 않고, 유입 경로 구분은 leads 테이블의
-  // UTM + page 필드로 이미 하고 있다. 액션을 늘리면 라벨 관리 지점만 늘어난다.
   var SIGNUP = 'lqxNCILG7NgcEOaBrrJE'
   var LABELS = { signup: SIGNUP, sample: SIGNUP }
-
-  // 한 번 보고한 액션은 다시 보고하지 않는다. 폼이 성공 후 자기 자신을 교체하긴
-  // 하지만, 그건 화면 동작이지 보장이 아니다 — 이중 제출이 이중 전환이 되면
-  // 입찰 최적화가 실제보다 좋은 신호를 받는다.
   var fired = {}
 
-  /**
-   * 전환 1건 보고. **제출이 성공한 뒤에만** 부른다.
-   * 검증 실패·중복 제출·honeypot 경로에서는 부르지 않는다.
-   *
-   * Plausible 이벤트와는 별개다 — Plausible 은 우리가 보는 지표, 이쪽은 Ads
-   * 입찰 최적화에 쓰인다.
-   *
-   * @param {'signup'|'sample'} which
-   */
   window.trackConversion = function (which) {
     if (fired[which]) return
     if (typeof window.gtag !== 'function') {
-      // 로더가 없으면 전환이 조용히 0 이 된다. 콘솔에 흔적을 남긴다.
-      console.warn('[LandedIQ] gtag 미로드 — ' + which + ' 전환이 기록되지 않습니다.')
+      console.warn('[LandedIQ] gtag not loaded; ' + which + ' conversion was not recorded.')
       return
     }
     var label = LABELS[which]
-    // **라벨 없이 보내지 않는다.** send_to 에 ID 만 넣으면 어느 전환 액션에도
-    // 매핑되지 않아 기록 자체가 안 된다 — 리포트에는 전환 0 으로만 보이고,
-    // 태그는 정상 동작 중이라 원인을 찾을 단서가 없다. 가장 나쁜 실패 모양이다.
-    //
-    // 그래서 조용한 no-op 을 금지한다: 콘솔 에러 + Plausible 이벤트로 남긴다.
-    // 콘솔은 아무도 안 본다 — 우리가 실제로 보는 대시보드에 찍혀야 발견된다.
     if (!label) {
-      console.error('[LandedIQ] 전환 라벨 미설정 (' + which + ') — 전송하지 않음. 이 전환은 기록되지 않습니다.')
+      console.error('[LandedIQ] Missing conversion label for ' + which + '.')
       if (window.plausible) window.plausible('ads_label_missing', { props: { which: which } })
       return
     }
@@ -65,4 +28,157 @@
       currency: 'USD',
     })
   }
+
+  function addStyles() {
+    if (document.getElementById('liq-shell-styles')) return
+    var style = document.createElement('style')
+    style.id = 'liq-shell-styles'
+    style.textContent = `
+      .liq-site-header,.liq-site-footer,.liq-product-bridge{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;box-sizing:border-box}
+      .liq-site-header *,.liq-site-footer *,.liq-product-bridge *{box-sizing:border-box}
+      .liq-site-header{position:relative;z-index:50;border-bottom:1px solid rgba(148,163,184,.18);background:#020617;color:#e2e8f0}
+      .liq-nav-inner{max-width:1152px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+      .liq-brand{display:flex;align-items:center;gap:10px;color:#fff!important;text-decoration:none!important;font-size:18px;font-weight:750;white-space:nowrap}
+      .liq-brand-mark{display:inline-flex;align-items:center;justify-content:center;border-radius:9px;background:#6366f1;color:#fff;padding:6px 9px;font-size:13px;font-weight:900;letter-spacing:-.02em}
+      .liq-nav-links{display:flex;align-items:center;justify-content:flex-end;gap:22px;font-size:14px}
+      .liq-nav-links a{color:#cbd5e1!important;text-decoration:none!important;white-space:nowrap}
+      .liq-nav-links a:hover,.liq-nav-links a[aria-current="page"]{color:#fff!important}
+      .liq-nav-links .liq-nav-primary{border-radius:9px;background:#6366f1;color:#fff!important;padding:9px 14px;font-weight:750}
+      .liq-nav-links .liq-nav-secondary{font-weight:650}
+      .liq-product-bridge{max-width:1152px;margin:0 auto;padding:64px 20px;color:#e2e8f0}
+      .liq-bridge-card{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,.9fr);gap:38px;align-items:center;border:1px solid rgba(148,163,184,.2);border-radius:22px;background:linear-gradient(135deg,rgba(99,102,241,.13),rgba(15,23,42,.76));padding:34px}
+      .liq-kicker{margin:0 0 10px;color:#a5b4fc;font-size:11px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}
+      .liq-product-bridge h2{margin:0;color:#fff;font-size:30px;line-height:1.18;letter-spacing:-.025em}
+      .liq-product-bridge p{margin:13px 0 0;color:#94a3b8;font-size:15px;line-height:1.75}
+      .liq-bridge-actions{display:flex;flex-wrap:wrap;gap:11px;margin-top:22px}
+      .liq-bridge-actions a{display:inline-flex;align-items:center;justify-content:center;border-radius:10px;padding:11px 16px;text-decoration:none!important;font-weight:750}
+      .liq-bridge-primary{background:#6366f1;color:#fff!important}
+      .liq-bridge-secondary{border:1px solid #334155;color:#e2e8f0!important;background:#0f172a}
+      .liq-flow{display:grid;gap:10px}
+      .liq-flow-step{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;border:1px solid rgba(148,163,184,.16);border-radius:12px;background:rgba(2,6,23,.55);padding:13px}
+      .liq-flow-step b{display:flex;width:30px;height:30px;align-items:center;justify-content:center;border-radius:9px;background:rgba(99,102,241,.18);color:#c7d2fe;font-size:12px}
+      .liq-flow-step strong{display:block;color:#fff;font-size:14px}
+      .liq-flow-step span{display:block;margin-top:2px;color:#94a3b8;font-size:12px;line-height:1.45}
+      .liq-context-bar{border-bottom:1px solid rgba(148,163,184,.15);background:#0f172a;color:#cbd5e1}
+      .liq-context-inner{max-width:1152px;margin:auto;padding:10px 20px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;text-align:center}
+      .liq-context-inner a{color:#c7d2fe!important;font-weight:700;text-decoration:none!important}
+      .liq-site-footer{border-top:1px solid #1e293b;background:#020617;color:#94a3b8}
+      .liq-footer-inner{max-width:1152px;margin:0 auto;padding:36px 20px}
+      .liq-footer-main{display:grid;grid-template-columns:minmax(240px,1fr) auto;gap:32px;align-items:start}
+      .liq-footer-copy{max-width:620px;font-size:12px;line-height:1.75}
+      .liq-footer-copy strong{display:block;margin-bottom:7px;color:#fff;font-size:16px}
+      .liq-footer-links{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px 18px;font-size:12px}
+      .liq-footer-links a{color:#cbd5e1!important;text-decoration:none!important}
+      .liq-footer-legal{margin-top:24px;padding-top:20px;border-top:1px solid #1e293b;font-size:11px;line-height:1.7;color:#64748b}
+      body.liq-sample-page{padding-top:0!important}
+      body.liq-sample-page>.wrap{padding-top:32px}
+      body.liq-sample-page .liq-site-header,body.liq-sample-page .liq-site-footer{margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw)}
+      @media(max-width:800px){
+        .liq-nav-inner{gap:12px}.liq-nav-links{gap:12px}.liq-nav-hide-mobile{display:none!important}
+        .liq-bridge-card{grid-template-columns:1fr;padding:25px}.liq-product-bridge{padding:46px 20px}.liq-product-bridge h2{font-size:25px}
+        .liq-footer-main{grid-template-columns:1fr}.liq-footer-links{justify-content:flex-start}
+      }
+      @media(max-width:480px){.liq-nav-links .liq-nav-secondary{display:none}.liq-brand{font-size:16px}.liq-nav-inner{padding:12px 16px}}
+      @media print{.liq-site-header,.liq-site-footer,.liq-context-bar,.liq-product-bridge{display:none!important}}
+    `
+    document.head.appendChild(style)
+  }
+
+  function nav(path) {
+    var current = path.indexOf('/hts') === 0 ? 'hts' : path.indexOf('/sample-report') === 0 ? 'sample' : path === '/' ? 'home' : ''
+    var header = document.createElement('header')
+    header.className = 'liq-site-header'
+    header.innerHTML = '<div class="liq-nav-inner">' +
+      '<a class="liq-brand" href="/"><span class="liq-brand-mark">LIQ</span><span>LandedIQ</span></a>' +
+      '<nav class="liq-nav-links" aria-label="Primary navigation">' +
+      '<a class="liq-nav-hide-mobile" href="/"'+(current==='home'?' aria-current="page"':'')+'>Product</a>' +
+      '<a href="/hts"'+(current==='hts'?' aria-current="page"':'')+'>Free HTS Lookup</a>' +
+      '<a class="liq-nav-hide-mobile" href="/sample-report.html"'+(current==='sample'?' aria-current="page"':'')+'>Sample Report</a>' +
+      '<a class="liq-nav-secondary" href="/app">Sign in</a>' +
+      '<a class="liq-nav-primary" href="/#signup">Join Beta</a>' +
+      '</nav></div>'
+    return header
+  }
+
+  function footer() {
+    var el = document.createElement('footer')
+    el.className = 'liq-site-footer'
+    el.innerHTML = '<div class="liq-footer-inner"><div class="liq-footer-main">' +
+      '<div class="liq-footer-copy"><strong>LandedIQ</strong>Working beta for U.S. import sellers. Look up duty layers, review a sample landed-cost report, and join the beta for product-level margin analysis.</div>' +
+      '<nav class="liq-footer-links" aria-label="Footer navigation"><a href="/">Product</a><a href="/hts">Free HTS Lookup</a><a href="/sample-report.html">Sample Report</a><a href="/app">Sign in</a><a href="/privacy">Privacy</a><a href="mailto:support@landediq.app">Support</a></nav>' +
+      '</div><div class="liq-footer-legal">Operated by MTL Co., Ltd. · 471 Gonghang-daero, Gangseo-gu, Seoul 07570, Republic of Korea<br>Estimates are not customs, legal, or tax advice. Final classification and duty liability remain with the importer of record. · © 2026 LandedIQ</div></div>'
+    return el
+  }
+
+  function homeBridge() {
+    var section = document.createElement('section')
+    section.className = 'liq-product-bridge'
+    section.setAttribute('aria-labelledby','free-tool-heading')
+    section.innerHTML = '<div class="liq-bridge-card"><div><p class="liq-kicker">Start with the free tool</p><h2 id="free-tool-heading">Find the duty first. Then calculate what it does to your margin.</h2><p>The free HTS Lookup uses the same maintained tariff ledger that powers LandedIQ. Search an HTS code or product keyword, review MFN and additional duty layers, then continue to the product-level workflow.</p><div class="liq-bridge-actions"><a class="liq-bridge-primary" data-liq-event="landing_hts_bridge_click" href="/hts">Try Free HTS Lookup →</a><a class="liq-bridge-secondary" href="/sample-report.html">See the full output</a></div></div><div class="liq-flow"><div class="liq-flow-step"><b>1</b><div><strong>Look up the HTS duty</strong><span>MFN, Section 301 and other applicable layers.</span></div></div><div class="liq-flow-step"><b>2</b><div><strong>Review landed-cost output</strong><span>See fees, freight allocation and cost per SKU.</span></div></div><div class="liq-flow-step"><b>3</b><div><strong>Protect your margin</strong><span>Estimate true margin and the price you may need to charge.</span></div></div></div></div>'
+    return section
+  }
+
+  function contextBar(text, linkText, href) {
+    var el = document.createElement('div')
+    el.className = 'liq-context-bar'
+    el.innerHTML = '<div class="liq-context-inner"><span>'+text+'</span><a href="'+href+'">'+linkText+' →</a></div>'
+    return el
+  }
+
+  function applyShell() {
+    var path = location.pathname
+    if (!(path === '/' || path.indexOf('/hts') === 0 || path.indexOf('/sample-report') === 0 || path === '/privacy')) return
+    addStyles()
+
+    if (path.indexOf('/sample-report') === 0) document.body.classList.add('liq-sample-page')
+
+    var oldHeader = document.querySelector('body > header, body > .nav')
+    if (oldHeader) oldHeader.remove()
+    document.body.insertBefore(nav(path), document.body.firstChild)
+
+    if (path.indexOf('/hts') === 0) {
+      var h = document.querySelector('.liq-site-header')
+      if (h) h.insertAdjacentElement('afterend', contextBar('Free HTS Lookup is part of the LandedIQ workflow.', 'See how landed cost and margin connect', '/#workflow'))
+      var existingCta = document.getElementById('landed-cta')
+      if (existingCta) {
+        existingCta.textContent = 'Continue to LandedIQ Beta'
+        existingCta.href = '/#signup'
+      }
+    }
+
+    if (path.indexOf('/sample-report') === 0) {
+      var hs = document.querySelector('.liq-site-header')
+      if (hs) hs.insertAdjacentElement('afterend', contextBar('This report is the output of the same workflow as the free HTS Lookup.', 'Check an HTS code first', '/hts'))
+      var sampleTitle = document.querySelector('.wrap h1')
+      if (sampleTitle) sampleTitle.insertAdjacentHTML('beforebegin','<p style="margin:0 0 8px;color:#6366f1;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase">LandedIQ product workflow · Sample output</p>')
+      var sampleButton = document.querySelector('#cta-form button')
+      if (sampleButton) sampleButton.textContent = 'Join LandedIQ Beta'
+    }
+
+    if (path === '/') {
+      var main = document.querySelector('main')
+      if (main && !document.querySelector('.liq-product-bridge')) {
+        var sections = main.querySelectorAll(':scope > section')
+        var target = sections.length > 1 ? sections[1] : null
+        var bridge = homeBridge()
+        bridge.id = 'workflow'
+        if (target) target.insertAdjacentElement('afterend', bridge)
+        else main.appendChild(bridge)
+      }
+    }
+
+    document.querySelectorAll('body > footer, body > .foot, .wrap > footer').forEach(function (f) {
+      if (!f.classList.contains('liq-site-footer')) f.remove()
+    })
+    document.body.appendChild(footer())
+
+    document.querySelectorAll('[data-liq-event]').forEach(function(el){
+      el.addEventListener('click',function(){
+        if(window.plausible) window.plausible(el.getAttribute('data-liq-event'))
+      })
+    })
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', applyShell)
+  else applyShell()
 })()
