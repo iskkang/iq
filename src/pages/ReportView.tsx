@@ -86,6 +86,15 @@ export function ReportView({ shipment, items }: { shipment: Shipment; items: Ite
           {' · '}MPF (shipment) {fmtUsd(round2(result.totals.mpf_shipment))} · HMF (shipment){' '}
           {fmtUsd(round2(result.totals.hmf_shipment))} · Allocation basis: {result.totals.allocation_basis_used}
           {' · '}Shipment value {fmtUsd(round2(result.totals.total_value))}
+          {result.totals.unresolved_skus > 0 && (
+            <>
+              {' · '}
+              <span className="font-semibold text-amber-700">
+                Totals exclude {result.totals.unresolved_skus} unresolved SKU
+                {result.totals.unresolved_skus > 1 ? 's' : ''}
+              </span>
+            </>
+          )}
         </div>
         <button
           onClick={() => downloadCsv(`landediq-report-${shipment.name}.csv`, buildReportCsv(result, shipment.name))}

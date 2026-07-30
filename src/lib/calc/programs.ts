@@ -89,10 +89,13 @@ export interface UnresolvedProgram {
   /** 근거 인용 (UNVERIFIED-2024-REVIEW 등) — 사용자에게 왜 모르는지 설명한다 */
   source: string | null
   /**
-   * 확정되면 취할 수 있는 값의 범위 [최소, 최대].
-   * 이 프로그램이 속한 리스트들의 세율에서 나온다. 화면에 "0% 또는 25%" 로 나간다.
+   * 확정되면 취할 수 있는 **값들**. 범위가 아니라 나열이다.
+   *
+   * 처음에는 [최소, 최대] 로 두고 "0% 또는 25%" 라고 썼는데 그건 사실이 아니다 —
+   * List 4A(7.5%) 도 가능하므로 실제로는 셋 중 하나다. 범위로 쓰면 7.5% 가
+   * 사라지고, 사용자는 두 값 중 하나로 대비하게 된다.
    */
-  rate_range: [number, number]
+  rate_candidates: number[]
 }
 
 export interface AppliedProgram {
@@ -111,11 +114,13 @@ export interface AppliedProgram {
 }
 
 /**
- * 미해결 라인이 확정되면 가질 수 있는 세율 범위.
- * List 4B(정지) 면 0%, List 1·2·3 이면 25%, List 4A 면 7.5% 다.
- * 하한이 0 인 이유는 "정말 어느 목록에도 없음" 이 가능하기 때문이다.
+ * 미해결 라인이 확정되면 가질 수 있는 값들.
+ *   0     어느 목록에도 없거나 정지된 List 4B 뿐
+ *   0.075 List 4A
+ *   0.25  List 1·2·3
+ * 범위가 아니라 나열이다 — 가운데 값이 실재하므로 "0~25%" 는 거짓이 된다.
  */
-const CHINA_301_RANGE: [number, number] = [0, 0.25]
+const CHINA_301_CANDIDATES = [0, 0.075, 0.25]
 
 /**
  * 발효 구간 판정 — `[from, to)` 반열림. **만료일 당일부터 미적용.**
@@ -182,6 +187,26 @@ export function isExcluded(exclusions: ProgramExclusion[], programCode: string, 
  * 현행 `duty_total = Σ layers` 는 2단계를 못 해서 EU·대만·일본·한국·스위스
  * 원산지에서 틀린 숫자를 냈다.
  */
+/**
+ * 미해결 경고 문구 — **앱과 Edge Function 이 같은 말을 하도록 여기 한 곳에 둔다.**
+ * 두 벌이 되면 한쪽만 고쳐지고, 그 차이는 사용자에게만 보인다.
+ */
+export function unresolvedWarning(u: UnresolvedProgram): string {
+  const v = u.rate_candidates.map(pct)
+  const list = v.length > 1 ? `${v.slice(0, -1).join(', ')}, or ${v[v.length - 1]}` : v[0]
+  return (
+    `${u.authority} unresolved for this HTS — ${list} — depends on which Section 301 list applies. ` +
+    `The tariff line was restructured and we cannot confirm which one (${u.source ?? 'no source'}). ` +
+    `Duty is not calculated for this SKU — confirm with your broker.`
+  )
+}
+
+/** 0.25 → "25%" */
+function pct(r: number): string {
+  const v = r * 100
+  return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + '%'
+}
+
 export function resolvePrograms(
   ledger: RateRow[],
   programs: DutyProgram[],
@@ -275,7 +300,7 @@ export function resolvePrograms(
     authority: active.find((p) => p.code === code)?.authority ?? code,
     matched_hts: row.hts_code,
     source: row.source ?? null,
-    rate_range: CHINA_301_RANGE,
+    rate_candidates: CHINA_301_CANDIDATES,
   }))
 
   // total 은 **확정된 프로그램만** 더한 값이다. unresolved 가 비어 있지 않으면

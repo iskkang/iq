@@ -21,14 +21,8 @@ import type {
 } from './types'
 import { clamp } from './money'
 import { normalizeHts } from './rates'
-import { programBreakdownLabel, resolvePrograms } from './programs'
+import { programBreakdownLabel, resolvePrograms, unresolvedWarning } from './programs'
 import type { DutyProgram, ProgramExclusion } from './programs'
-
-/** 0.25 → "25%" (미해결 경고 문구용) */
-function pct(r: number): string {
-  const v = r * 100
-  return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + '%'
-}
 
 export function trueMargin(
   currentPrice: number,
@@ -160,14 +154,7 @@ export function computeShipment(
       // 매칭은 됐지만 리스트 배정이 확정되지 않은 행.
       // 예전에는 "0% 로 처리했다" 고 경고만 했다 — 경고를 내도 **숫자는 이미
       // 0 으로 합산돼 있었다.** 이제 숫자를 만들지 않는다.
-      for (const u of unresolved) {
-        const [lo, hi] = u.rate_range
-        warnings.push(
-          `${u.authority} unresolved for this HTS — could be ${pct(lo)} or ${pct(hi)}. ` +
-            `The tariff line was restructured and we cannot confirm which list applies ` +
-            `(${u.source ?? 'no source'}). Duty is not calculated for this SKU — confirm with your broker.`,
-        )
-      }
+      for (const u of unresolved) warnings.push(unresolvedWarning(u))
     }
 
     // **미해결이면 숫자를 만들지 않는다.** 0 으로 두면 랜디드 코스트에 조용히
@@ -221,6 +208,9 @@ export function computeShipment(
       mpf_shipment: mpfShipment,
       hmf_shipment: hmfShipment,
       allocation_basis_used: basisUsed,
+      // 한 줄을 못 세면 나머지 합은 그 선적의 landed cost 가 아니라 **부분합**이다.
+      // 줄 단위로 지킨 원칙이 총계에서 무너지지 않도록 건수를 함께 내보낸다.
+      unresolved_skus: results.filter((r) => r.duty_usd === null).length,
     },
     rate_as_of: shipment.rate_as_of,
     warnings: shipmentWarnings,

@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "check:scripts": "tsc -p tsconfig.scripts.json --noEmit",
-    "check:edge": "npx -y deno@2 check --config supabase/functions/deno.json supabase/functions/classify/index.ts",
+    "check:edge": "npx -y deno@2 check --config supabase/functions/deno.json supabase/functions/classify/index.ts supabase/functions/hts-lookup/index.ts",
     "check:build": "tsx scripts/check-build.ts",
     "check:schema": "tsx scripts/check-schema.ts",
     "check:docs": "tsx scripts/check-docs.ts",

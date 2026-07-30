@@ -277,6 +277,7 @@ function main() {
     <div>MPF <b>${fmtUsd(round2(r.totals.mpf_shipment))}</b></div>
     <div>HMF <b>${fmtUsd(round2(r.totals.hmf_shipment))}</b></div>
     <div>Allocation <b>${r.totals.allocation_basis_used}</b></div>
+    ${r.totals.unresolved_skus > 0 ? `<div class="warn">Totals exclude <b>${r.totals.unresolved_skus}</b> unresolved SKU(s)</div>` : ''}
     <div>Target margin <b>${fmtPct(SHIP.target_margin, 0)}</b> · channel fee <b>${fmtPct(SHIP.channel_fee_pct, 0)}</b></div>
   </div>
 

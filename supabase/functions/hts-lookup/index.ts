@@ -15,7 +15,7 @@
  * 배포: supabase functions deploy hts-lookup
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2'
-import { resolvePrograms, exclusionStatus } from '../../../src/lib/calc/programs.ts'
+import { resolvePrograms, exclusionStatus, unresolvedWarning } from '../../../src/lib/calc/programs.ts'
 import type { DutyProgram, ProgramExclusion } from '../../../src/lib/calc/programs.ts'
 import type { RateRow } from '../../../src/lib/calc/types.ts'
 import { normalizeHts } from '../../../src/lib/calc/rates.ts'
@@ -129,13 +129,9 @@ Deno.serve(async (req: Request) => {
       const warnings: string[] = []
       // 미해결은 숫자를 만들지 않는다 — 0 으로 내려보내면 화면이 "관세 없음" 으로
       // 그린다. 앱 엔진과 같은 규칙이다 (SkuResult.duty_rate_total 이 null 인 것).
-      for (const u of unresolved) {
-        const fmt = (v: number) => `${(v * 100) % 1 === 0 ? (v * 100).toFixed(0) : (v * 100).toFixed(1)}%`
-        warnings.push(
-          `${u.authority} unresolved for this HTS — could be ${fmt(u.rate_range[0])} or ${fmt(u.rate_range[1])}. ` +
-            `The tariff line was restructured and we cannot confirm which list applies (${u.source ?? 'no source'}) — confirm with your broker.`,
-        )
-      }
+      // 문구는 앱과 **같은 함수**에서 나온다 (engine.unresolvedWarning).
+      // 두 벌이면 한쪽만 고쳐지고 그 차이는 사용자에게만 보인다.
+      for (const u of unresolved) warnings.push(unresolvedWarning(u))
       for (const a of applied) {
         if (a.exclusion === 'unverified') {
           warnings.push(
@@ -163,7 +159,7 @@ Deno.serve(async (req: Request) => {
           })),
         // null = 미해결. 0 과 구분돼야 한다.
         duty_rate_total: unresolved.length > 0 ? null : total,
-        unresolved: unresolved.map((u) => ({ program: u.program_code, rate_range: u.rate_range })),
+        unresolved: unresolved.map((u) => ({ program: u.program_code, rate_candidates: u.rate_candidates })),
         exclusion_status: origin
           ? applied.reduce<string>(
               (acc, a) => (a.exclusion !== 'none' ? a.exclusion : acc),

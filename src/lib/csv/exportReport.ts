@@ -36,7 +36,12 @@ export function buildReportCsv(result: ShipmentResult, shipmentName: string): st
     '',
     `"Shipment: ${shipmentName}"`,
     `"Rates as of: ${result.rate_as_of} (rate ledger snapshot)"`,
-    `"MPF (shipment): $${round2(result.totals.mpf_shipment)} / HMF (shipment): $${round2(result.totals.hmf_shipment)} / Allocation basis: ${result.totals.allocation_basis_used}"`,
+    // 미해결이 있으면 **합계라는 이름을 쓰지 않는다.** 한 줄을 못 세면 나머지 합은
+    // 그 선적의 landed cost 가 아니라 부분합이고, 깨끗한 총계로 나가면 줄 단위로
+    // 지킨 원칙이 여기서 무너진다.
+    result.totals.unresolved_skus > 0
+      ? `"Total (excludes ${result.totals.unresolved_skus} unresolved SKU${result.totals.unresolved_skus > 1 ? 's' : ''}) — MPF (shipment): $${round2(result.totals.mpf_shipment)} / HMF (shipment): $${round2(result.totals.hmf_shipment)} / Allocation basis: ${result.totals.allocation_basis_used}"`
+      : `"Total — MPF (shipment): $${round2(result.totals.mpf_shipment)} / HMF (shipment): $${round2(result.totals.hmf_shipment)} / Allocation basis: ${result.totals.allocation_basis_used}"`,
     `"Rows marked '${UNREVIEWED_LABEL}' are model suggestions that no person has confirmed. The importer of record is responsible for the final classification."`,
     `"${DISCLAIMER_EN}"`,
   ].join('\r\n')

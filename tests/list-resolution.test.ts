@@ -76,9 +76,10 @@ describe('resolvePrograms — 미해결', () => {
     expect(r.unresolved[0].program_code).toBe('301-china-unverified')
   })
 
-  it('범위를 함께 보고한다 — 화면이 "0% 또는 25%" 를 쓸 수 있어야 한다', () => {
+  it('가능한 값을 **나열**한다 — 범위로 쓰면 7.5% 가 사라진다', () => {
     const r = resolvePrograms([MFN, UNRESOLVED], PROGRAMS, [], '9105194000', 'CN', AS_OF)
-    expect(r.unresolved[0].rate_range).toEqual([0, 0.25])
+    // List 4A(7.5%) 가 실재하므로 [최소, 최대] 로는 사실을 말할 수 없다
+    expect(r.unresolved[0].rate_candidates).toEqual([0, 0.075, 0.25])
     expect(r.unresolved[0].source).toBe('UNVERIFIED-RESTRUCTURED')
   })
 
@@ -144,8 +145,8 @@ describe('computeShipment — 미해결 SKU 는 숫자를 만들지 않는다', 
     expect(line.unresolved_programs).toHaveLength(1)
     const w = line.warnings.join(' | ')
     expect(w).toContain('unresolved')
-    expect(w).toContain('0%')
-    expect(w).toContain('25%')
+    expect(w).toContain('0%, 7.5%, or 25%')
+    expect(w).toContain('depends on which Section 301 list applies')
     expect(w).toContain('broker')
     // "treated as 0%" 로 되돌아가면 실패 — 그 문구가 곧 조용한 합산의 흔적이다
     expect(w).not.toContain('treated as 0%')
@@ -164,5 +165,22 @@ describe('computeShipment — 미해결 SKU 는 숫자를 만들지 않는다', 
     expect(vn.duty_usd).toBeCloseTo(4.5, 10)
     expect(vn.landed_cost).not.toBeNull()
     expect(r.items.find((x) => x.sku === 'WATCH-CN')!.duty_usd).toBeNull()
+  })
+
+  it('총계는 부분합임을 건수로 알린다 (Q2)', () => {
+    const r = computeShipment(
+      shipment,
+      [item('WATCH-CN', 'CN'), item('WATCH-VN', 'VN')],
+      [MFN, UNRESOLVED],
+      FEES,
+      ctx,
+    )
+    // 한 줄을 못 세면 나머지 합은 그 선적의 landed cost 가 아니라 부분합이다
+    expect(r.totals.unresolved_skus).toBe(1)
+  })
+
+  it('전부 확정되면 총계는 온전하다 (건수 0)', () => {
+    const r = computeShipment(shipment, [item('WATCH-VN', 'VN')], [MFN, UNRESOLVED], FEES, ctx)
+    expect(r.totals.unresolved_skus).toBe(0)
   })
 })

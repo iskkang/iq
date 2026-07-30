@@ -128,18 +128,41 @@ async function main() {
   // ── 미확정 행 ──────────────────────────────────────────────────
   const unver = new Map<string, string>()
 
-  // (a) 2024 4년 재검토 인상 — 범위 밖
-  for (const c of d.review_2024_excluded) {
-    if (!eight.has(c) || activeCovered.has(c)) continue
-    unver.set(c, 'UNVERIFIED-2024-REVIEW: 9903.91.xx 인상 대상, 이번 적재 범위 밖')
+  // (a) 2024 4년 재검토 인상 — **레거시 301 과는 다른 조항이다.**
+  //
+  // 예전에는 이 코드들을 "301 미해결" 로 표시했는데, 그건 두 가지를 섞은 것이다:
+  //   · Note 20 의 레거시 리스트(1·2·3·4A·4B) 배정 → 이 코드들은 **어디에도 없다.**
+  //     열거되지 않았으므로 not_covered, 즉 확인된 0% 다.
+  //   · 9903.91.xx 인상 조항 → 아예 적재하지 않은 **별개 프로그램**이다.
+  //
+  // 앞의 것은 확정됐고 뒤의 것은 라인 단위 미해결이 아니라 프로그램 단위
+  // 커버리지 공백이다. 라인에 "모름" 을 붙여 두면 진짜 모르는 라인과 구분이 안 된다.
+  const outOfScope = d.review_2024_excluded.filter((c) => eight.has(c) && !activeCovered.has(c))
+  if (outOfScope.length > 0) {
+    console.log(
+      `  9903.91.xx (2024 4년 재검토 인상) ${outOfScope.length}개 코드는 적재 범위 밖 — ` +
+        `Note 20 레거시 리스트 기준으로는 확인된 0% 다. 별개 프로그램 공백은 backlog A-5 참조.`,
+    )
   }
 
   // (b) note 의 8자리가 현행에서 재편돼 사라진 경우 → 현행 형제 라인이 불명
+  // **직접 열거된 코드는 형제로 덮지 않는다.** 이 규칙이 빠져 있어서 시계 3개
+  // (9105.19.40 · 9105.29.40 · 9105.99.50) 가 미해결로 잘못 분류됐다 — 셋 다
+  // Note 20 이 List 4B 로 **직접 열거**하고 있었다. 4B 는 정지 목록이라 부재가
+  // 곧 확인된 0% 인데, 형제 규칙이 그 위에 "모름" 을 덮어썼다.
+  // 정지 목록에 열거된 것은 "모르는" 게 아니라 "0% 임이 확인된" 것이다.
+  const enumeratedAnywhere = new Set(d.lists.flatMap((L) => L.codes))
   const stale = d.lists.flatMap((L) => (L.active ? L.codes.filter((c) => !eight.has(c)) : []))
+  // 흔적을 남긴다. 이 숫자가 note 행수와 실제 적재 행수의 차이를 그대로 설명한다
+  // (list3 −7, list4a −72). 조용히 사라지면 나중에 "왜 안 맞지" 로 돌아온다.
+  if (stale.length > 0) {
+    console.log(`  note 20 이 열거하나 현행 관세표에 없는 코드 ${stale.length}개 — 적재 행수 차이의 원인이다`)
+  }
   for (const s of stale) {
     const six = s.slice(0, 6)
     for (const sib of eight) {
       if (!sib.startsWith(six) || activeCovered.has(sib)) continue
+      if (enumeratedAnywhere.has(sib)) continue
       unver.set(sib, `UNVERIFIED-RESTRUCTURED: note 는 ${s} 를 열거하나 현행 관세표에 없다 — 같은 소호의 현행 라인 커버리지 불명`)
     }
   }

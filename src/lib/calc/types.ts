@@ -148,6 +148,12 @@ export interface ShipmentTotals {
   freight_pool: number
   mpf_shipment: number
   hmf_shipment: number
+  /**
+   * duty 를 확정하지 못한 SKU 수. **0 이 아니면 이 선적의 모든 합계는 부분합이다.**
+   * 화면·CSV 는 "Total (excludes N unresolved SKUs)" 처럼 이름에 박아야 한다 —
+   * 깨끗한 총계로 나가면 줄 단위로 지킨 원칙이 총계에서 무너진다.
+   */
+  unresolved_skus: number
   allocation_basis_used: AllocationBasis
 }
 
