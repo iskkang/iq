@@ -52,6 +52,19 @@ export class ReferenceDataError extends Error {
     )
   }
 
+  /**
+   * 덮는 행이 없을 때 어느 갈래인가 — **순수 판정**.
+   *
+   * 쿼리 실행과 분리해 둔 이유: 체인 mock(.from().select().lte().or()…)은 그
+   * 자체가 유지 부담이다. 나중에 쿼리를 한 군데 고치면 mock 도 따라 고쳐야 하고,
+   * 안 고치면 **테스트는 통과하는데 실제는 깨진다** — 이 저장소가 반복해서 당한
+   * 패턴이다. 판정은 여기서 순수 입력으로 검증하고, "쿼리가 실제로 그 필터를
+   * 미는가" 는 SOP 분기 점검의 실조회가 담당한다.
+   */
+  static forEmptyLookup(table: string, asOf: string, tableHasAnyRow: boolean): ReferenceDataError {
+    return tableHasAnyRow ? ReferenceDataError.coverage(table, asOf) : ReferenceDataError.config(table)
+  }
+
   /** 기준일을 덮는 행이 없다 — 사용자 입력 문제 */
   static coverage(table: string, asOf: string): ReferenceDataError {
     return new ReferenceDataError(

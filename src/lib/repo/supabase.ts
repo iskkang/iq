@@ -314,9 +314,8 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
           .from('fee_settings')
           .select('*', { count: 'exact', head: true })
         throwIf(cErr, 'Failed to check fee settings')
-        throw (count ?? 0) === 0
-          ? ReferenceDataError.config('fee_settings')
-          : ReferenceDataError.coverage('fee_settings', asOf)
+        // 판정은 순수 함수에 있다 — 체인 mock 없이 테스트할 수 있도록
+        throw ReferenceDataError.forEmptyLookup('fee_settings', asOf, (count ?? 0) > 0)
       }
       return {
         mpf_rate: Number(data.mpf_rate),
