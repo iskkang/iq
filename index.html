@@ -1,478 +1,83 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <!-- Google tag (gtag.js) — Google Ads 전환 추적. 페이지당 한 번만. -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18359222502"></script>
-  <script>
-    window.dataLayer = window.dataLayer || []
-    function gtag() { dataLayer.push(arguments) }
-    gtag('js', new Date())
-    gtag('config', 'AW-18359222502')
-  </script>
-  <!-- 전환 보고는 /ads.js 한 곳에서만 한다 (라벨을 페이지마다 복사하지 않는다) -->
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','AW-18359222502')</script>
   <script src="/ads.js"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LandedIQ — Know your true margin after tariffs</title>
-  <meta name="description" content="Upload your product list, get landed cost, true margin and recommended price per SKU. Built for U.S. import sellers." />
+  <title>LandedIQ — True landed cost and margin per SKU</title>
+  <meta name="description" content="Upload your product list and calculate duties, import fees, freight, channel costs, true margin, and recommended selling price per SKU." />
   <link rel="canonical" href="https://www.landediq.app/" />
   <meta property="og:url" content="https://www.landediq.app/" />
-  <meta property="og:title" content="LandedIQ — Know your true margin after tariffs" />
-  <meta property="og:description" content="Landed cost, true margin and recommended price per SKU. Built for U.S. import sellers." />
+  <meta property="og:title" content="LandedIQ — Know the real profit of every imported SKU" />
+  <meta property="og:description" content="Landed cost, true margin and recommended price per SKU for U.S. import sellers." />
   <meta property="og:type" content="website" />
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-  <!-- Plausible (쿠키리스). 도메인이 바뀌면 data-domain 도 함께 바꿀 것 -->
   <script defer data-domain="landediq.app" src="https://plausible.io/js/script.js"></script>
   <style>
-    html { scroll-behavior: smooth; }
-    details > summary { list-style: none; cursor: pointer; }
-    details > summary::-webkit-details-marker { display: none; }
+    html{scroll-behavior:smooth} details>summary{list-style:none;cursor:pointer} details>summary::-webkit-details-marker{display:none}
+    .grid-bg{background-image:linear-gradient(to right,rgba(148,163,184,.12) 1px,transparent 1px),linear-gradient(to bottom,rgba(148,163,184,.12) 1px,transparent 1px);background-size:28px 28px}
   </style>
 </head>
-<body class="bg-slate-50 text-slate-900 antialiased">
+<body class="bg-slate-950 text-slate-100 antialiased">
+<script>
+const CONFIG={SUPABASE_URL:'%VITE_SUPABASE_URL%',SUPABASE_ANON_KEY:'%VITE_SUPABASE_ANON_KEY%'}
+</script>
 
-  <!-- ═══════════════ CONFIG — 여기만 수정 ═══════════════
-       변형 카피(A/B/C)는 landed-cost-smoke-test-v1.md 확정 카피로 교체하세요. -->
-  <script>
-    const CONFIG = {
-      // 이메일은 자체 DB(leads 테이블, RLS insert 전용)로 들어간다.
-      // 아래 두 값은 공개용이다 — anon 키는 앱 번들에도 이미 실려 있고,
-      // leads 는 select 정책이 없어 이 키로 읽을 수 없다.
-      //
-      // 앱 번들과 같은 출처를 쓴다. 예전에는 여기에 키를 하드코딩해서 랜딩과
-      // 앱이 서로 다른 anon 키를 쓰고 있었다. Vite 가 빌드 시 VITE_ 접두 변수를
-      // 치환한다. 치환이 안 되면 saveLead 가 즉시 실패한다 — 조용히 이메일을
-      // 잃지 않도록. (주석에 치환 패턴을 그대로 쓰면 Vite 가 그것까지 찾으려다
-      //  빌드마다 경고를 낸다. 그래서 여기서는 패턴 대신 말로 적는다.)
-      SUPABASE_URL: '%VITE_SUPABASE_URL%',
-      SUPABASE_ANON_KEY: '%VITE_SUPABASE_ANON_KEY%',
-      VARIANTS: {
-        a: { // Angle A: 관세 격변 → 마진 불안 (fear)
-          headline: 'Tariffs changed again.\nDo you still know your real margin?',
-          subhead: 'Upload your product list — get landed cost, true margin, and the price you should be charging. Per SKU, in minutes.',
-        },
-        b: { // Angle B: 속도·유틸리티 (utility)
-          headline: 'Your true landed cost,\nper SKU, in 3 minutes',
-          subhead: 'Duties, Section 301, MPF, freight — estimated and allocated automatically from one CSV. No spreadsheet gymnastics, no customs broker required.',
-        },
-        c: { // Angle C: 세율 변동 모니터링 (alert)
-          headline: 'Know the moment a tariff change\neats your margin',
-          subhead: 'We track duty changes on your SKUs and tell you exactly what to reprice — before your P&L finds out the hard way.',
-        },
-      },
-    }
-  </script>
+<header class="sticky top-0 z-30 border-b border-white/10 bg-slate-950/90 backdrop-blur">
+  <div class="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
+    <a href="/" class="flex items-center gap-2.5"><span class="rounded-lg bg-indigo-500 px-2.5 py-1.5 text-sm font-black text-white">LIQ</span><span class="text-lg font-semibold tracking-tight">LandedIQ</span></a>
+    <nav class="hidden items-center gap-6 text-sm text-slate-300 md:flex"><a href="#product" class="hover:text-white">Product</a><a href="#accuracy" class="hover:text-white">Accuracy</a><a href="#pricing" class="hover:text-white">Pricing</a><a href="/hts" class="hover:text-white">Free HTS lookup</a></nav>
+    <div class="flex items-center gap-3"><a href="/app" class="text-sm text-slate-300 hover:text-white">Sign in</a><a href="/app" class="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400">Analyze 3 SKUs free</a></div>
+  </div>
+</header>
 
-  <!-- Nav -->
-  <header class="mx-auto flex max-w-3xl items-center justify-between px-5 py-4">
-    <div class="flex items-center gap-2">
-      <span class="rounded-md bg-indigo-600 px-2 py-1 text-sm font-bold text-white">LIQ</span>
-      <span class="text-lg font-semibold tracking-tight">LandedIQ</span>
+<main>
+<section class="grid-bg relative overflow-hidden border-b border-white/10">
+  <div class="absolute inset-x-0 top-0 h-80 bg-gradient-to-b from-indigo-500/15 to-transparent"></div>
+  <div class="relative mx-auto grid max-w-6xl gap-12 px-5 py-20 lg:grid-cols-[1.05fr_.95fr] lg:items-center lg:py-28">
+    <div>
+      <p class="mb-5 inline-flex rounded-full border border-indigo-400/30 bg-indigo-400/10 px-3 py-1 text-xs font-semibold text-indigo-200">Landed cost intelligence for U.S. import sellers</p>
+      <h1 class="max-w-3xl text-4xl font-black leading-[1.06] tracking-tight sm:text-6xl">Know the real profit of every imported SKU.</h1>
+      <p class="mt-6 max-w-2xl text-lg leading-8 text-slate-300">Upload your product list. LandedIQ calculates duties, import fees, freight and marketplace costs—then shows your true margin and the price you should charge.</p>
+      <div class="mt-8 flex flex-col gap-3 sm:flex-row"><a href="/app" class="rounded-xl bg-indigo-500 px-6 py-3.5 text-center font-bold text-white shadow-lg shadow-indigo-950 hover:bg-indigo-400">Analyze 3 SKUs free</a><a href="/sample-report.html" class="rounded-xl border border-white/15 bg-white/5 px-6 py-3.5 text-center font-semibold text-white hover:bg-white/10">View sample report</a></div>
+      <p class="mt-4 text-sm text-slate-400">No credit card · Official HTS data · Every duty layer shown</p>
     </div>
-    <div class="flex items-center gap-3">
-      <a href="/app" class="text-sm text-slate-500 hover:text-indigo-600">Sign in</a>
-      <a href="#signup" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Get early access</a>
-    </div>
-  </header>
 
-  <!-- Hero -->
-  <section id="signup" class="mx-auto max-w-3xl px-5 pt-10 pb-14 text-center">
-    <p class="mb-3 inline-block rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
-      For U.S. import sellers · 2025–26 tariff chaos edition
-    </p>
-    <h1 id="headline" class="whitespace-pre-line text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl"></h1>
-    <p id="subhead" class="mx-auto mt-4 max-w-xl text-base text-slate-600 sm:text-lg"></p>
-
-    <form class="signup-form mx-auto mt-8 flex max-w-md flex-col gap-2 sm:flex-row" data-intent="hero">
-      <input type="email" name="email" required placeholder="you@yourstore.com"
-        class="w-full flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:outline-none" />
-      <!-- 봇 함정: 사람에게는 보이지 않는다. 채워져 오면 제출을 버린다.
-           광고 트래픽에서 봇 가입이 섞이면 전환율 자체를 못 믿게 된다. -->
-      <input type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true"
-        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
-      <button type="submit"
-        class="rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-sm hover:bg-indigo-700">
-        Get early access
-      </button>
-    </form>
-    <p class="form-note mt-2 text-xs text-slate-400">Free during early access · No credit card</p>
-  </section>
-
-  <!-- Problem -->
-  <section class="border-y border-slate-200 bg-white">
-    <div class="mx-auto max-w-3xl px-5 py-14">
-      <h2 class="text-center text-2xl font-bold sm:text-3xl">Your COGS is lying to you</h2>
-      <div class="mt-8 grid gap-6 sm:grid-cols-3">
-        <div class="rounded-xl border border-slate-200 p-5">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-            <!-- lucide: trending-up -->
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-          </div>
-          <h3 class="mt-3 font-semibold">Rates changed three times this year</h3>
-          <p class="mt-1 text-sm text-slate-600">Three regimes in five months: the Supreme Court struck down the IEEPA tariffs in February, Section 122 replaced them, and that expired on July 24 for new Section 301 duties. The rate you priced against is gone.</p>
-        </div>
-        <div class="rounded-xl border border-slate-200 p-5">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-            <!-- lucide: eye-off -->
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>
-          </div>
-          <h3 class="mt-3 font-semibold">Hidden per-unit costs</h3>
-          <p class="mt-1 text-sm text-slate-600">Duties, MPF, harbor fees and freight never make it into your unit economics — until the margin is already gone.</p>
-        </div>
-        <div class="rounded-xl border border-slate-200 p-5">
-          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-            <!-- lucide: target -->
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-          </div>
-          <h3 class="mt-3 font-semibold">Repricing blind</h3>
-          <p class="mt-1 text-sm text-slate-600">Amazon fees on top of landed cost — most sellers can't answer "what should this SKU sell for?" with a number.</p>
-        </div>
+    <div id="product" class="rounded-2xl border border-white/10 bg-slate-900/90 p-3 shadow-2xl shadow-black/40">
+      <div class="rounded-xl border border-white/10 bg-slate-950">
+        <div class="flex items-center justify-between border-b border-white/10 px-4 py-3"><div><p class="text-xs text-slate-500">Margin analysis</p><p class="font-semibold">China kitchenware · 3 SKUs</p></div><span class="rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-300">Rates current</span></div>
+        <div class="grid gap-3 p-4 sm:grid-cols-3"><div class="rounded-lg bg-white/[.04] p-3"><p class="text-xs text-slate-500">Avg. landed cost</p><p class="mt-1 text-xl font-bold">$8.88</p></div><div class="rounded-lg bg-white/[.04] p-3"><p class="text-xs text-slate-500">True margin</p><p class="mt-1 text-xl font-bold text-amber-300">31.7%</p></div><div class="rounded-lg bg-white/[.04] p-3"><p class="text-xs text-slate-500">Margin at risk</p><p class="mt-1 text-xl font-bold text-rose-300">-$4,260</p></div></div>
+        <div class="overflow-x-auto"><table class="w-full min-w-[620px] text-sm"><thead class="border-y border-white/10 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th class="px-4 py-3">SKU</th><th class="px-4 py-3">Duty</th><th class="px-4 py-3 text-right">Landed</th><th class="px-4 py-3 text-right">True margin</th><th class="px-4 py-3 text-right">Recommended</th></tr></thead><tbody class="divide-y divide-white/5"><tr><td class="px-4 py-3 font-medium">MUG-01</td><td class="px-4 py-3"><span class="rounded bg-rose-400/10 px-2 py-1 text-xs text-rose-200">MFN + 301</span></td><td class="px-4 py-3 text-right">$3.50</td><td class="px-4 py-3 text-right text-amber-300">28.0%</td><td class="px-4 py-3 text-right font-semibold">$8.90</td></tr><tr><td class="px-4 py-3 font-medium">PAN-01</td><td class="px-4 py-3"><span class="rounded bg-amber-400/10 px-2 py-1 text-xs text-amber-200">MFN + 301</span></td><td class="px-4 py-3 text-right">$8.46</td><td class="px-4 py-3 text-right text-emerald-300">41.2%</td><td class="px-4 py-3 text-right font-semibold">$19.40</td></tr></tbody></table></div>
+        <div class="border-t border-white/10 p-4 text-xs text-slate-500">HTS 6912.00.4810 · Effective date shown · Source: USITC HTS</div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- How it works -->
-  <section class="mx-auto max-w-3xl px-5 py-14">
-    <h2 class="text-center text-2xl font-bold sm:text-3xl">How it works</h2>
-    <ol class="mt-8 space-y-6">
-      <li class="flex gap-4">
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">1</span>
-        <div>
-          <h3 class="font-semibold">Upload your product list</h3>
-          <p class="text-sm text-slate-600">One CSV: SKU, product name, material, unit cost, origin country, units. That's it — data you already have in your PO.</p>
-        </div>
-      </li>
-      <li class="flex gap-4">
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">2</span>
-        <div>
-          <h3 class="font-semibold">We estimate HTS codes & every duty layer</h3>
-          <p class="text-sm text-slate-600">AI suggests HTS candidates with confidence scores — you confirm with one click. Duties, Section 301, MPF, HMF and freight get allocated per unit.</p>
-        </div>
-      </li>
-      <li class="flex gap-4">
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">3</span>
-        <div>
-          <h3 class="font-semibold">Get your margin report</h3>
-          <p class="text-sm text-slate-600">Landed cost, true margin after channel fees, and the recommended price that protects your target margin — per SKU.</p>
-        </div>
-      </li>
-    </ol>
-  </section>
+<section class="border-b border-white/10 bg-slate-900/50">
+  <div class="mx-auto max-w-6xl px-5 py-8 text-center"><p class="text-sm text-slate-400">Built by the MTL freight forwarding team that calculates landed costs for real shipments every week.</p></div>
+</section>
 
-  <!-- Sample report -->
-  <section class="border-y border-slate-200 bg-white">
-    <div class="mx-auto max-w-3xl px-5 py-14">
-      <h2 class="text-center text-2xl font-bold sm:text-3xl">What you get</h2>
-      <p class="mt-2 text-center text-sm text-slate-500">Real output format — sample data, China origin, rates as of 2026-07-29</p>
-      <div class="mt-8 overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
-        <table class="w-full min-w-[560px] text-right text-sm">
-          <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th class="px-4 py-3 text-left">SKU</th>
-              <th class="px-4 py-3 text-left">Duty breakdown</th>
-              <th class="px-4 py-3">Landed cost</th>
-              <th class="px-4 py-3">True margin</th>
-              <th class="px-4 py-3">Recommended</th>
-            </tr>
-          </thead>
-          <!-- 아래 행은 npm run sample:build 가 실제 계산 엔진으로 생성한다. 손으로 고치지 말 것. -->
-          <tbody class="divide-y divide-slate-100"><!-- SAMPLE_ROWS:START -->
-            <tr>
-              <td class="px-4 py-3 text-left font-medium">MUG-01</td>
-              <td class="px-4 py-3 text-left"><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-700">MFN 10.0%</span><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-rose-100 text-rose-800">301 forced labor +12.5%</span></td>
-              <td class="px-4 py-3 font-semibold">$3.50</td>
-              <td class="px-4 py-3 text-emerald-600">58.0%</td>
-              <td class="px-4 py-3">$6.37</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 text-left font-medium">BACKPACK-01</td>
-              <td class="px-4 py-3 text-left"><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-700">MFN 17.6%</span><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-rose-100 text-rose-800">301 forced labor +12.5%</span><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-amber-100 text-amber-800">301 List 3 +25.0%</span></td>
-              <td class="px-4 py-3 font-semibold">$14.68</td>
-              <td class="px-4 py-3 text-emerald-600">48.3%</td>
-              <td class="px-4 py-3">$26.69</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 text-left font-medium">PAN-01</td>
-              <td class="px-4 py-3 text-left"><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-slate-100 text-slate-700">MFN 2.0%</span><span class="mr-1 inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium bg-rose-100 text-rose-800">301 forced labor +12.5%</span></td>
-              <td class="px-4 py-3 font-semibold">$8.46</td>
-              <td class="px-4 py-3 text-emerald-600">51.2%</td>
-              <td class="px-4 py-3">$15.37</td>
-            </tr>
-          <!-- SAMPLE_ROWS:END --></tbody>
-        </table>
-      </div>
-      <div class="mt-6 text-center">
-        <form id="sample-form" class="mx-auto flex max-w-md flex-col gap-2 sm:flex-row">
-          <input type="email" name="email" required placeholder="you@yourstore.com"
-            class="w-full flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:outline-none" />
-          <input type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true"
-            style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
-          <button type="submit"
-            class="whitespace-nowrap rounded-lg border border-indigo-300 bg-white px-5 py-3 text-base font-semibold text-indigo-700 hover:bg-indigo-50">
-            See a sample report →
-          </button>
-        </form>
-        <p id="sample-note" class="mt-2 text-xs text-slate-400">Opens immediately — no waiting for an email</p>
-      </div>
-    </div>
-  </section>
+<section class="mx-auto max-w-6xl px-5 py-20">
+  <div class="mx-auto max-w-3xl text-center"><p class="text-sm font-semibold uppercase tracking-widest text-indigo-300">From spreadsheet margin to actual margin</p><h2 class="mt-3 text-3xl font-bold sm:text-4xl">The cost you entered is not the cost you sell against.</h2><p class="mt-4 text-slate-400">LandedIQ connects every missing cost to the SKU that created it.</p></div>
+  <div class="mt-10 overflow-hidden rounded-2xl border border-white/10 bg-slate-900"><div class="grid md:grid-cols-2"><div class="border-b border-white/10 p-6 md:border-b-0 md:border-r"><p class="text-sm font-semibold text-slate-400">Seller spreadsheet</p><dl class="mt-5 space-y-3 text-sm"><div class="flex justify-between"><dt>Product cost</dt><dd>$8.00</dd></div><div class="flex justify-between text-slate-500"><dt>Duty</dt><dd>Missing</dd></div><div class="flex justify-between text-slate-500"><dt>MPF / HMF</dt><dd>Missing</dd></div><div class="flex justify-between text-slate-500"><dt>Freight allocation</dt><dd>Estimated</dd></div><div class="mt-5 flex justify-between border-t border-white/10 pt-4 text-lg font-bold"><dt>Reported margin</dt><dd>42.0%</dd></div></dl></div><div class="p-6"><p class="text-sm font-semibold text-indigo-300">LandedIQ</p><dl class="mt-5 space-y-3 text-sm"><div class="flex justify-between"><dt>Product cost</dt><dd>$8.00</dd></div><div class="flex justify-between"><dt>Duty</dt><dd>$2.96</dd></div><div class="flex justify-between"><dt>MPF / HMF</dt><dd>$0.31</dd></div><div class="flex justify-between"><dt>Freight allocation</dt><dd>$1.24</dd></div><div class="mt-5 flex justify-between border-t border-white/10 pt-4 text-lg font-bold"><dt>True margin</dt><dd class="text-amber-300">24.7%</dd></div><div class="flex justify-between font-semibold"><dt>Price required</dt><dd class="text-emerald-300">$28.40</dd></div></dl></div></div></div>
+</section>
 
-  <!-- Pricing -->
-  <section class="mx-auto max-w-3xl px-5 py-14">
-    <h2 class="text-center text-2xl font-bold sm:text-3xl">Pricing</h2>
-    <p class="mt-2 text-center text-sm text-slate-500">Annual = 10 months. Early-access members lock launch pricing.</p>
-    <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div class="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 class="font-semibold">Free</h3>
-        <p class="mt-1 text-2xl font-extrabold">$0</p>
-        <p class="mt-2 text-sm text-slate-600">3 SKUs, one-time analysis</p>
-      </div>
-      <div class="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 class="font-semibold">Starter</h3>
-        <p class="mt-1 text-2xl font-extrabold">$29<span class="text-sm font-normal text-slate-400">/mo</span></p>
-        <p class="mt-2 text-sm text-slate-600">50 SKUs / month</p>
-      </div>
-      <div class="relative rounded-xl border-2 border-indigo-500 bg-white p-5">
-        <span class="absolute -top-2.5 left-4 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">POPULAR</span>
-        <h3 class="font-semibold">Growth</h3>
-        <p class="mt-1 text-2xl font-extrabold">$79<span class="text-sm font-normal text-slate-400">/mo</span></p>
-        <p class="mt-2 text-sm text-slate-600">500 SKUs / month</p>
-      </div>
-      <div class="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 class="font-semibold">Pro</h3>
-        <p class="mt-1 text-2xl font-extrabold">$149<span class="text-sm font-normal text-slate-400">/mo</span></p>
-        <p class="mt-2 text-sm text-slate-600">Unlimited SKUs</p>
-      </div>
-    </div>
-  </section>
+<section id="accuracy" class="border-y border-white/10 bg-white text-slate-900">
+  <div class="mx-auto max-w-6xl px-5 py-20"><div class="grid gap-12 lg:grid-cols-2 lg:items-center"><div><p class="text-sm font-semibold uppercase tracking-widest text-indigo-600">Auditability, not black-box answers</p><h2 class="mt-3 text-3xl font-bold sm:text-4xl">See exactly why the number changed.</h2><p class="mt-4 text-slate-600">Every report identifies the HTS line, each additional duty program, the effective date and unresolved classification risk. We do not turn uncertainty into a confident-looking number.</p><ul class="mt-7 grid gap-3 text-sm sm:grid-cols-2"><li class="rounded-lg bg-slate-50 p-3">Official USITC HTS source</li><li class="rounded-lg bg-slate-50 p-3">8-digit Section 301 matching</li><li class="rounded-lg bg-slate-50 p-3">Effective dates on reports</li><li class="rounded-lg bg-slate-50 p-3">Unresolved codes flagged</li><li class="rounded-lg bg-slate-50 p-3">Every duty layer separated</li><li class="rounded-lg bg-slate-50 p-3">No silent guessing</li></ul></div><div class="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm"><div class="flex items-center justify-between"><div><p class="text-xs uppercase tracking-wide text-slate-500">Classification detail</p><p class="mt-1 font-mono text-lg font-bold">6912.00.4810</p></div><span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">84% confidence</span></div><div class="mt-6 space-y-3 text-sm"><div class="flex justify-between border-b border-slate-200 pb-3"><span>Base MFN</span><b>9.8%</b></div><div class="flex justify-between border-b border-slate-200 pb-3"><span>Section 301 List 3</span><b>25.0%</b></div><div class="flex justify-between border-b border-slate-200 pb-3"><span>Effective date</span><b>2026-07-25</b></div><div class="flex justify-between"><span>Source</span><b>USITC HTS</b></div></div><a href="/hts" class="mt-6 block rounded-lg bg-slate-900 px-4 py-3 text-center font-semibold text-white">Try the free HTS lookup</a></div></div></div>
+</section>
 
-  <!-- FAQ -->
-  <section class="border-t border-slate-200 bg-white">
-    <div class="mx-auto max-w-3xl px-5 py-14">
-      <h2 class="text-center text-2xl font-bold sm:text-3xl">FAQ</h2>
-      <div class="mt-8 space-y-3">
-        <details class="rounded-xl border border-slate-200 p-4">
-          <summary class="flex items-center justify-between font-medium">Is this customs or legal advice?<span class="text-slate-400">+</span></summary>
-          <p class="mt-2 text-sm text-slate-600">No. LandedIQ produces estimates for cost planning and pricing decisions. Final HTS classification and duty liability always remain with the importer of record.</p>
-        </details>
-        <details class="rounded-xl border border-slate-200 p-4">
-          <summary class="flex items-center justify-between font-medium">Where do the duty rates come from?<span class="text-slate-400">+</span></summary>
-          <p class="mt-2 text-sm text-slate-600">Base MFN rates are seeded from the official USITC Harmonized Tariff Schedule. Additional duty programs — Section 301 and whatever replaces or supplements it — are maintained in a rate ledger with effective dates, so a program that ends stops applying on the right day instead of quietly lingering. Every report shows which layers were applied and the as-of date they were read.</p>
-        </details>
-        <details class="rounded-xl border border-slate-200 p-4">
-          <summary class="flex items-center justify-between font-medium">What happens when a tariff code gets restructured?<span class="text-slate-400">+</span></summary>
-          <p class="mt-2 text-sm text-slate-600">We say so, explicitly. Tariff schedules get renumbered — a line is split, merged or retired, while the duty list that referenced the old number is never updated. A tool that looks up the old code returns a confident wrong answer. We mark those lines <b>unresolved</b> and refuse to put a number on them rather than guessing, so you know exactly which SKUs need a broker's eyes. Right now all <b>9,924</b> Section 301 lines in our ledger are resolved — the last 5 were confirmed against U.S. note 20 on 2026-07-30. When the schedule is renumbered again that count will move, and you'll see it on the affected SKUs instead of in a footnote.</p>
-        </details>
-        <details class="rounded-xl border border-slate-200 p-4">
-          <summary class="flex items-center justify-between font-medium">I don't know my HTS codes. Is that a problem?<span class="text-slate-400">+</span></summary>
-          <p class="mt-2 text-sm text-slate-600">That's the point — you don't need to. AI suggests 2–3 candidates per product from your product name and material, with confidence scores. Already have codes from your broker's entry documents? Paste them in and skip the step.</p>
-        </details>
-        <details class="rounded-xl border border-slate-200 p-4">
-          <summary class="flex items-center justify-between font-medium">What do I need to upload?<span class="text-slate-400">+</span></summary>
-          <p class="mt-2 text-sm text-slate-600">One CSV with six columns you already have: SKU, product name, material/description, unit cost, origin country, units per shipment. Weight is optional.</p>
-        </details>
-        <details class="rounded-xl border border-slate-200 p-4">
-          <summary class="flex items-center justify-between font-medium">When do I get access?<span class="text-slate-400">+</span></summary>
-          <p class="mt-2 text-sm text-slate-600">We're onboarding new stores in small weekly batches. Join the list and we'll email you when your slot opens — early-access members get launch pricing locked in.</p>
-        </details>
-      </div>
-    </div>
-  </section>
+<section class="mx-auto max-w-6xl px-5 py-20"><div class="text-center"><h2 class="text-3xl font-bold">From product list to pricing decision</h2></div><div class="mt-10 grid gap-5 md:grid-cols-3"><article class="rounded-2xl border border-white/10 bg-white/[.04] p-6"><span class="text-sm font-bold text-indigo-300">01</span><h3 class="mt-3 text-xl font-semibold">Upload your products</h3><p class="mt-2 text-sm leading-6 text-slate-400">Use the SKU, description, material, origin, unit cost and quantity already in your PO.</p></article><article class="rounded-2xl border border-white/10 bg-white/[.04] p-6"><span class="text-sm font-bold text-indigo-300">02</span><h3 class="mt-3 text-xl font-semibold">Confirm HTS candidates</h3><p class="mt-2 text-sm leading-6 text-slate-400">Review ranked candidates, descriptions, confidence and the duty impact of each option.</p></article><article class="rounded-2xl border border-white/10 bg-white/[.04] p-6"><span class="text-sm font-bold text-indigo-300">03</span><h3 class="mt-3 text-xl font-semibold">Protect your target margin</h3><p class="mt-2 text-sm leading-6 text-slate-400">See landed cost, marketplace-adjusted margin and the recommended selling price per SKU.</p></article></div></section>
 
-  <!-- Bottom CTA -->
-  <section class="mx-auto max-w-3xl px-5 py-16 text-center">
-    <h2 class="text-2xl font-bold sm:text-3xl">Stop guessing your margins</h2>
-    <form class="signup-form mx-auto mt-6 flex max-w-md flex-col gap-2 sm:flex-row" data-intent="footer">
-      <input type="email" name="email" required placeholder="you@yourstore.com"
-        class="w-full flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:outline-none" />
-      <!-- 봇 함정: 사람에게는 보이지 않는다. 채워져 오면 제출을 버린다.
-           광고 트래픽에서 봇 가입이 섞이면 전환율 자체를 못 믿게 된다. -->
-      <input type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true"
-        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
-      <button type="submit"
-        class="rounded-lg bg-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-sm hover:bg-indigo-700">
-        Get early access
-      </button>
-    </form>
-    <p class="form-note mt-2 text-xs text-slate-400">Free during early access · No credit card</p>
-  </section>
+<section id="pricing" class="border-y border-white/10 bg-slate-900/60"><div class="mx-auto max-w-6xl px-5 py-20"><div class="text-center"><h2 class="text-3xl font-bold">Simple pricing that grows with your catalog</h2><p class="mt-3 text-slate-400">Start free. Pay when LandedIQ becomes part of your pricing workflow.</p></div><div class="mt-10 grid gap-5 lg:grid-cols-4"><div class="rounded-2xl border border-white/10 bg-slate-950 p-6"><h3 class="font-semibold">Free</h3><p class="mt-2 text-3xl font-black">$0</p><ul class="mt-5 space-y-2 text-sm text-slate-400"><li>3 products</li><li>Basic duty estimate</li><li>Sample margin report</li></ul></div><div class="rounded-2xl border border-white/10 bg-slate-950 p-6"><h3 class="font-semibold">Starter</h3><p class="mt-2 text-3xl font-black">$29<span class="text-sm font-normal text-slate-500">/mo</span></p><ul class="mt-5 space-y-2 text-sm text-slate-400"><li>50 active SKUs</li><li>Saved product library</li><li>CSV / PDF export</li></ul></div><div class="relative rounded-2xl border-2 border-indigo-400 bg-indigo-400/[.06] p-6"><span class="absolute -top-3 left-5 rounded-full bg-indigo-400 px-3 py-1 text-xs font-bold text-slate-950">POPULAR</span><h3 class="font-semibold">Growth</h3><p class="mt-2 text-3xl font-black">$79<span class="text-sm font-normal text-slate-500">/mo</span></p><ul class="mt-5 space-y-2 text-sm text-slate-300"><li>500 active SKUs</li><li>Scenario comparison</li><li>Tariff-change alerts</li><li>3 users</li></ul></div><div class="rounded-2xl border border-white/10 bg-slate-950 p-6"><h3 class="font-semibold">Pro</h3><p class="mt-2 text-3xl font-black">$149<span class="text-sm font-normal text-slate-500">/mo</span></p><ul class="mt-5 space-y-2 text-sm text-slate-400"><li>Unlimited SKUs</li><li>Team workspace</li><li>Priority review</li></ul></div></div></div></section>
 
-  <!-- Footer -->
-  <footer class="border-t border-slate-200 bg-white">
-    <div class="mx-auto max-w-3xl px-5 py-8 text-center text-xs text-slate-400">
-      <p>Estimates only — not customs, legal, or tax advice. Final HTS classification and duty liability are the responsibility of the importer of record.</p>
+<section class="mx-auto max-w-4xl px-5 py-20"><h2 class="text-center text-3xl font-bold">Questions before you trust the number</h2><div class="mt-8 space-y-3"><details class="rounded-xl border border-white/10 bg-white/[.03] p-5"><summary class="flex justify-between font-semibold">Is this customs or legal advice?<span>+</span></summary><p class="mt-3 text-sm leading-6 text-slate-400">No. LandedIQ produces estimates for cost planning and pricing decisions. Final HTS classification and duty liability remain with the importer of record.</p></details><details class="rounded-xl border border-white/10 bg-white/[.03] p-5"><summary class="flex justify-between font-semibold">Where do the duty rates come from?<span>+</span></summary><p class="mt-3 text-sm leading-6 text-slate-400">Base MFN rates come from the official USITC Harmonized Tariff Schedule. Additional programs are maintained with effective dates and shown separately on every report.</p></details><details class="rounded-xl border border-white/10 bg-white/[.03] p-5"><summary class="flex justify-between font-semibold">What if the classification is uncertain?<span>+</span></summary><p class="mt-3 text-sm leading-6 text-slate-400">We flag uncertainty and show ranked candidates. Unresolved lines are not converted into a false zero or a confident wrong answer.</p></details><details class="rounded-xl border border-white/10 bg-white/[.03] p-5"><summary class="flex justify-between font-semibold">What do I need to upload?<span>+</span></summary><p class="mt-3 text-sm leading-6 text-slate-400">SKU, product name, material or description, unit cost, country of origin and units per shipment. Weight is optional.</p></details></div></section>
 
-      <!-- 고객 0명이라 후기는 못 쓴다. 정직하게 쓸 수 있는 건 만든 사람의 실무 이력이고,
-           관세 도구에서는 그게 후기의 대체재다. -->
-      <p class="mx-auto mb-4 max-w-md text-sm text-slate-500">
-        Built by the team at <b class="text-slate-700">MTL Co., Ltd.</b>, a freight forwarder that files these
-        entries every week. We built it because we were doing this math in spreadsheets for our own clients.
-      </p>
+<section class="border-t border-white/10 bg-indigo-500"><div class="mx-auto max-w-4xl px-5 py-16 text-center"><h2 class="text-3xl font-black text-white">Stop pricing imported products with incomplete costs.</h2><p class="mx-auto mt-3 max-w-2xl text-indigo-100">Run three products through LandedIQ and see the difference between your spreadsheet margin and your true margin.</p><div class="mt-7 flex flex-col justify-center gap-3 sm:flex-row"><a href="/app" class="rounded-xl bg-white px-6 py-3.5 font-bold text-indigo-700">Analyze 3 SKUs free</a><a href="/sample-report.html" class="rounded-xl border border-white/40 px-6 py-3.5 font-semibold text-white">Open sample report</a></div></div></section>
+</main>
 
-      <!-- ═══ 사업자 정보 — Google Ads 심사 요건 (광고주 신원·연락처 확인) ═══ -->
-      <address id="business-info" class="mt-3 not-italic leading-relaxed">
-        <span id="biz-name">Operated by MTL Co., Ltd.</span><br />
-        <span id="biz-address">471 Gonghang-daero, Gangseo-gu, Seoul 07570, Republic of Korea</span><br />
-        <a id="biz-email" href="mailto:support@landediq.app" class="underline hover:text-slate-600"
-          >support@landediq.app</a
-        >
-      </address>
-
-      <p class="mt-2">© 2026 LandedIQ · <a href="/privacy" class="underline hover:text-slate-600">Privacy</a></p>
-    </div>
-  </footer>
-
-  <script>
-    // ── 리드 저장 (Supabase leads, RLS insert 전용) ──────────────
-    //
-    // 순수 INSERT 로 보낸다. Prefer: resolution=ignore-duplicates 를 쓰면
-    // PostgREST 가 upsert 로 처리해 RLS 를 다시 걸고 42501 로 막힌다.
-    // 통과시키려면 anon 에게 UPDATE 정책을 열어야 하는데, 그러면 남의 행을
-    // 덮어쓸 수 있다. 중복은 409 를 성공으로 취급해 해결한다
-    // (unique(email, intent) — 같은 주소가 같은 경로로 다시 눌러도 에러가 아니다).
-    /**
-     * 전환 1건 보고. 로더는 <head> 정적 스니펫, 라벨·중복방지는 /ads.js 에 있다.
-     * 히어로 폼 · 하단 CTA 폼 · 샘플 요청 폼이 **모두 이 함수 하나**를 부른다.
-     */
-    function reportConversion(which) {
-      if (typeof window.trackConversion === 'function') window.trackConversion(which)
-      else console.warn('[LandedIQ] /ads.js 미로드 — ' + which + ' 전환이 기록되지 않습니다.')
-    }
-
-    /** 가입 완료 표시 (정상 제출과 honeypot 경로가 같은 화면을 본다) */
-    function showJoined(form) {
-      const done = document.createElement('p')
-      done.className = 'rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-emerald-800 font-medium'
-      done.textContent = "You're in line — we're onboarding new stores this week"
-      const note = form.closest('section')?.querySelector('.form-note')
-      form.replaceWith(done)
-      note?.remove()
-    }
-
-    /** 빌드 시 %VITE_*% 가 치환되지 않았는가 (Vercel env 누락) */
-    function configMissing() {
-      return !CONFIG.SUPABASE_URL || CONFIG.SUPABASE_URL.indexOf('%VITE_') === 0
-        || !CONFIG.SUPABASE_ANON_KEY || CONFIG.SUPABASE_ANON_KEY.indexOf('%VITE_') === 0
-    }
-
-    async function saveLead(fields) {
-      if (configMissing()) throw new Error('Supabase env not injected at build time')
-      const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/leads`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: CONFIG.SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify(fields),
-      })
-      if (res.status === 409) return // 이미 등록된 주소 — 사용자에겐 성공이다
-      if (!res.ok) throw new Error(`leads ${res.status}: ${(await res.text()).slice(0, 200)}`)
-    }
-
-    // ── 변형 결정: /a /b /c (로컬 미리보기는 ?v=a|b|c) ──
-    const seg = location.pathname.split('/').filter(Boolean).pop() || ''
-    const variant = CONFIG.VARIANTS[seg] ? seg : (CONFIG.VARIANTS[new URLSearchParams(location.search).get('v')] ? new URLSearchParams(location.search).get('v') : 'a')
-    document.getElementById('headline').textContent = CONFIG.VARIANTS[variant].headline
-    document.getElementById('subhead').textContent = CONFIG.VARIANTS[variant].subhead
-
-    // ── UTM 파라미터 수집 (hidden field로 폼과 함께 저장) ──
-    const params = new URLSearchParams(location.search)
-    const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']
-    const utm = Object.fromEntries(UTM_KEYS.map((k) => [k, params.get(k) || '']))
-
-    document.querySelectorAll('.signup-form').forEach((form) => {
-      // hidden fields: variant + intent + utm
-      const add = (name, value) => {
-        const i = document.createElement('input')
-        i.type = 'hidden'; i.name = name; i.value = value
-        form.appendChild(i)
-      }
-      add('variant', variant)
-      add('intent', form.dataset.intent)
-      UTM_KEYS.forEach((k) => add(k, utm[k]))
-      add('page', location.pathname)
-
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault()
-        const btn = form.querySelector('button[type=submit]')
-        btn.disabled = true
-        btn.textContent = 'Joining…'
-        const data = Object.fromEntries(new FormData(form).entries())
-        // 봇 함정. 사람은 보이지 않는 필드를 채우지 않는다. 채워져 있으면
-        // 아무것도 보내지 않되 성공 화면을 보여준다 — 실패를 알려주면 우회법을 알려주는 셈이다.
-        if (data.company) {
-          showJoined(form)
-          return
-        }
-        try {
-          await saveLead({
-            email: data.email,
-            intent: data.intent || 'hero',
-            variant,
-            page: location.pathname,
-            utm_source: utm.utm_source || null,
-            utm_medium: utm.utm_medium || null,
-            utm_campaign: utm.utm_campaign || null,
-            utm_term: utm.utm_term || null,
-            utm_content: utm.utm_content || null,
-          })
-          // ── Plausible 이벤트 1개 (이메일 제출 시) ──
-          window.plausible?.('email_signup', {
-            props: { variant, intent: data.intent, utm_source: utm.utm_source, utm_campaign: utm.utm_campaign },
-          })
-          reportConversion('signup')
-          showJoined(form)
-        } catch (err) {
-          btn.disabled = false
-          btn.textContent = 'Get early access'
-          let msg = form.querySelector('.err')
-          if (!msg) {
-            msg = document.createElement('p')
-            msg.className = 'err w-full text-xs text-rose-600'
-            form.appendChild(msg)
-          }
-          msg.textContent = 'Something went wrong — please try again.'
-        }
-      })
-    })
-
-    // ── "See a sample report" → 이메일 수집 후 **즉시** 샘플 열람 ──
-    // 이메일 발송 인프라가 아직 없다. 기다리게 만들지 말고 바로 보여주되,
-    // 주소는 백그라운드로 leads 에 남긴다 — 수집 실패가 열람을 막지 않는다.
-    document.getElementById('sample-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault()
-      const form = e.currentTarget
-      const note = document.getElementById('sample-note')
-      const email = form.querySelector('input[type=email]').value
-      const btn = form.querySelector('button[type=submit]')
-      const trap = form.querySelector('input[name=company]')
-      const isBot = !!(trap && trap.value)
-
-      btn.disabled = true
-      const opened = window.open('/sample-report.html', '_blank', 'noopener')
-      if (!opened) location.href = '/sample-report.html' // 팝업 차단 시
-      note.textContent = 'Opened in a new tab — print to PDF to keep a copy.'
-      note.className = 'mt-2 text-xs text-emerald-600'
-
-      const params = new URLSearchParams(location.search)
-      try {
-        if (isBot) return // 함정에 걸림 — 리포트는 이미 열어줬으니 조용히 수집만 건너뛴다
-        await saveLead({
-          email,
-          intent: 'sample_report',
-          variant,
-          page: location.pathname,
-          ...Object.fromEntries(UTM_KEYS.map((k) => [k, params.get(k) || null])),
-        })
-        window.plausible?.('sample_report', { props: { variant, utm_source: utm.utm_source } })
-        reportConversion('sample')
-      } catch {
-        /* 리포트는 이미 열렸다 — 수집 실패로 사용자를 막지 않는다 */
-      }
-      btn.disabled = false
-    })
-  </script>
+<footer class="bg-slate-950"><div class="mx-auto max-w-6xl px-5 py-10 text-xs leading-6 text-slate-500"><p class="max-w-3xl">Estimates only — not customs, legal, or tax advice. Final HTS classification and duty liability are the responsibility of the importer of record.</p><address class="mt-4 not-italic">Operated by MTL Co., Ltd. · 471 Gonghang-daero, Gangseo-gu, Seoul 07570, Republic of Korea · <a href="mailto:support@landediq.app" class="underline">support@landediq.app</a> · <a href="/privacy" class="underline">Privacy</a></address><p class="mt-2">© 2026 LandedIQ</p></div></footer>
 </body>
 </html>
