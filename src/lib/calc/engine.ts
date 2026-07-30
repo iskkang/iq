@@ -138,6 +138,13 @@ export function computeShipment(
       for (const a of applied) {
         if (a.excluded) {
           warnings.push(`${a.authority} (${a.program_code}) is excluded for this HTS — treated as 0%`)
+        } else if (a.exclusion === 'unverified') {
+          // 미검증 면제는 세율을 낮추지 않는다. 문구가 확인된 면제와 달라야
+          // 사용자가 "면제받았다"와 "면제받을 수도 있다"를 구분한다.
+          warnings.push(
+            `${a.authority} (${a.program_code}): an exclusion may apply here but is unconfirmed — ` +
+              `duty charged in full, confirm with your broker`,
+          )
         }
       }
       // 매칭은 됐지만 근거가 확정되지 않은 행 — 조용히 0 으로 통과시키지 않는다.

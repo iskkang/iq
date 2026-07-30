@@ -43,7 +43,26 @@ export interface DutyProgram {
 export interface ProgramExclusion {
   program_code: string
   hts_code: string
+  /** 면제 발효일. 면제도 만료된다 — 대부분의 301 면제는 기간제다 */
+  effective_from?: string
+  /** null/미지정 = 현재 유효. 만료일 당일부터 미적용 (원장과 같은 규칙) */
+  effective_to?: string | null
+  /** 근거 인용. 'UNVERIFIED' 로 시작하면 확인 전이므로 면제를 적용하지 않는다 */
+  source?: string | null
 }
+
+/**
+ * 면제 판정 결과.
+ *
+ *   none        면제 없음 → 원장 세율 그대로
+ *   confirmed   근거가 확인된 면제 → 0%
+ *   unverified  면제 가능성은 있으나 근거 미확인 → **전액 부과 + 경고**
+ *
+ * unverified 를 0% 로 처리하지 않는 이유는 오차의 비대칭이다. 관세를 과대계상하면
+ * 고객은 예산을 넉넉히 잡을 뿐이지만, 과소계상하면 가격을 잘못 매겨 마진을 잃는다 —
+ * 이 제품이 없애준다고 약속한 바로 그 손해다. 확신이 없을 때는 부과하는 쪽으로 눕는다.
+ */
+export type ExclusionStatus = 'none' | 'confirmed' | 'unverified'
 
 export interface AppliedProgram {
   program_code: string
@@ -54,8 +73,10 @@ export interface AppliedProgram {
   /** 원장 행에 적힌 값 (top_up 이면 목표 합계) */
   ledger_rate: number
   matched_hts: string | null
-  /** 면제 목록에 걸려 0 이 된 경우 */
+  /** **확인된** 면제로 0 이 된 경우. 미검증 면제는 여기 false 다 */
   excluded: boolean
+  /** 면제 판정. unverified 면 부과하되 리포트에 다른 문구로 표시한다 */
+  exclusion: ExclusionStatus
 }
 
 function inEffect(from: string, to: string | null, asOf: string): boolean {
@@ -71,6 +92,30 @@ function htsMatchLength(rowHts: string, hts: string): number {
   return hts.startsWith(r) ? r.length : -1
 }
 
+/**
+ * 면제 판정. **발효일을 존중하고, 미검증 면제는 적용하지 않는다.**
+ *
+ * 예전에는 날짜를 아예 보지 않아서, 만료된 면제가 들어와도 계속 세율을 0 으로
+ * 만들었다 — 무효가 된 IEEPA 조항이 관세표에 남아 있던 것과 같은 구조다.
+ */
+export function exclusionStatus(
+  exclusions: ProgramExclusion[],
+  programCode: string,
+  hts: string,
+  asOf: string,
+): ExclusionStatus {
+  const hit = exclusions.filter(
+    (e) =>
+      e.program_code === programCode &&
+      htsMatchLength(e.hts_code, normalizeHts(hts)) >= 0 &&
+      inEffect(e.effective_from ?? '1900-01-01', e.effective_to ?? null, asOf),
+  )
+  if (hit.length === 0) return 'none'
+  // 하나라도 확인된 면제가 있으면 면제다. 전부 미확인이면 부과하고 알린다.
+  return hit.some((e) => !(e.source ?? '').startsWith('UNVERIFIED')) ? 'confirmed' : 'unverified'
+}
+
+/** @deprecated exclusionStatus 를 쓸 것 — 날짜·미검증 구분이 없다 */
 export function isExcluded(exclusions: ProgramExclusion[], programCode: string, hts: string): boolean {
   return exclusions.some(
     (e) => e.program_code === programCode && htsMatchLength(e.hts_code, normalizeHts(hts)) >= 0,
@@ -132,7 +177,9 @@ export function resolvePrograms(
 
   for (const [code, { row }] of picked) {
     const prog = active.find((p) => p.code === code)!
-    const excluded = h !== null && isExcluded(exclusions, code, h)
+    // 미검증 면제는 세율을 낮추지 않는다 — 부과하고 경고만 남긴다 (오차 비대칭)
+    const exStatus: ExclusionStatus = h !== null ? exclusionStatus(exclusions, code, h, asOf) : 'none'
+    const excluded = exStatus === 'confirmed'
     const entry: AppliedProgram = {
       program_code: code,
       authority: prog.authority,
@@ -140,6 +187,7 @@ export function resolvePrograms(
       applied_rate: 0,
       ledger_rate: row.ad_valorem_rate,
       matched_hts: row.hts_code,
+      exclusion: exStatus,
       excluded,
     }
     if (prog.rate_type === 'additive') additive.push(entry)
