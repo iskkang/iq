@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import Papa from 'papaparse'
-import { countRows, dbUrl, insertRows, serviceKey, verifiedWrite } from '../../scripts/lib/db'
+import { OWNED, assertOwned, countRows, deleteOwned, insertRows, verifiedWrite } from '../../scripts/lib/db'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -102,14 +102,16 @@ async function main() {
   const all =
     usitc >= 0 && args[usitc + 1] ? loadUsitc(args[usitc + 1], args[usitc + 2] ?? '2025-01-01') : parse(join(here, 'hts_seed_50.csv'))
 
-  // **mfn 은 건드리지 않는다.** 진실 출처는 USITC 전량 적재(npm run hts:seed,
-  // 17,633행)이고 이 CSV 의 50행은 초기 테스트용 표본이다. 예전 판이 이걸
-  // 구분하지 않아, 지우고-다시-넣기가 USITC 17,583행을 날렸다 (실제로 겪었다).
-  // --usitc 모드는 USITC 파일이 곧 진실 출처이므로 예외다.
-  const rates = usitc >= 0 ? all : all.filter((r) => r.program_code !== 'mfn')
-  if (usitc < 0 && rates.length < all.length) {
-    console.log(`  mfn ${all.length - rates.length}행은 건너뜀 — USITC 적재(hts:seed)가 진실 출처다`)
+  // **소유 범위를 코드가 정한다.** CSV 에 무엇이 들어 있든 이 스크립트가
+  // 건드릴 수 있는 program_code 는 OWNED['seed:rates'] 뿐이다. 예전에는 필터를
+  // CSV 분포에서 만들어, CSV 에 mfn 표본이 있다는 이유로 USITC 17,583행을 지웠다.
+  const owned = OWNED['seed:rates']
+  const rates = all.filter((r) => owned.includes(String(r.program_code)))
+  const dropped = all.length - rates.length
+  if (dropped > 0) {
+    console.log(`  소유 범위 밖 ${dropped}행 제외 (mfn 은 hts:seed, 중국 301 은 seed:301 소관)`)
   }
+  assertOwned('seed:rates', rates)
   const codes = [...new Set(rates.map((r) => String(r.program_code)))]
   const filter = `program_code=in.(${codes.join(',')})`
 
@@ -120,11 +122,7 @@ async function main() {
     'rate_ledger',
     'rate_ledger',
     async () => {
-      const res = await fetch(`${dbUrl()}/rest/v1/rate_ledger?${filter}`, {
-        method: 'DELETE',
-        headers: { apikey: serviceKey(), Authorization: `Bearer ${serviceKey()}` },
-      })
-      if (!res.ok) throw new Error(`기존 행 삭제 실패: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`)
+      await deleteOwned('seed:rates')
       await insertRows('rate_ledger', rates)
     },
     { filter, expectedDeltaAbsolute: rates.length },

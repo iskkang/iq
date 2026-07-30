@@ -120,6 +120,64 @@ export async function verifiedWrite(
   return { before, after, inserted }
 }
 
+/**
+ * ── 로더별 소유 범위 ─────────────────────────────────────────────
+ *
+ * 각 적재 스크립트가 **자기가 쓰고 지울 수 있는 program_code 집합**을 코드에
+ * 고정한다. 데이터가 코드의 권한을 정하면 안 된다.
+ *
+ * 실제 사고: seed-rates 가 삭제 필터를 CSV 의 program_code 분포에서 만들었다.
+ * CSV 에 mfn 표본 50행이 있었기 때문에 스크립트가 USITC 17,583행을 지울 권한을
+ * 갖게 됐고, 실제로 지웠다. CSV 를 편집한 사람이 의도 없이 삭제 권한을 준 셈이다.
+ */
+export const OWNED: Record<string, readonly string[]> = {
+  'seed:rates': ['301-forced-labor', '301-forced-labor-topup', '122', 'ieepa-trafficking'],
+  'hts:seed': ['mfn'],
+  'seed:301': ['301-china-list1', '301-china-list2', '301-china-list3', '301-china-list4a', '301-china-unverified'],
+}
+
+/** 쓰려는 행이 전부 소유 범위 안인가 — **쓰기 전에** 확인한다 */
+export function assertOwned(loader: keyof typeof OWNED | string, rows: Array<{ program_code?: unknown }>): void {
+  const owned = OWNED[loader]
+  if (!owned) throw new Error(`알 수 없는 로더: ${loader}. scripts/lib/db.ts 의 OWNED 에 선언할 것.`)
+  const seen = [...new Set(rows.map((r) => String(r.program_code ?? '')))]
+  const stray = seen.filter((c) => !owned.includes(c))
+  if (stray.length > 0) {
+    throw new Error(
+      `${loader}: 소유 범위 밖의 program_code 를 쓰려 한다 — ${stray.join(', ')}. ` +
+        `허용: ${owned.join(', ')}. 데이터가 코드의 권한을 넓히지 못하게 여기서 멈춘다.`,
+    )
+  }
+}
+
+/**
+ * 소유 범위 안의 행만 지운다. 삭제 예정 건수가 그 범위의 현재 행수를 넘으면 실패.
+ *
+ * 검증(verifiedWrite)은 사후 탐지였다 — 17,583행이 지워진 뒤에 알려줬다.
+ * 이건 예방이다.
+ */
+export async function deleteOwned(loader: keyof typeof OWNED | string): Promise<number> {
+  const owned = OWNED[loader]
+  if (!owned) throw new Error(`알 수 없는 로더: ${loader}`)
+  const filter = `program_code=in.(${owned.join(',')})`
+  const before = await countRows('rate_ledger', filter)
+  const total = await countRows('rate_ledger')
+  if (before > total) throw new Error(`${loader}: 삭제 대상(${before})이 전체(${total})보다 많다 — 필터가 잘못됐다`)
+
+  const res = await fetch(`${dbUrl()}/rest/v1/rate_ledger?${filter}`, {
+    method: 'DELETE',
+    headers: { apikey: serviceKey(), Authorization: `Bearer ${serviceKey()}` },
+  })
+  if (!res.ok) throw new Error(`${loader}: 삭제 실패 HTTP ${res.status} ${(await res.text()).slice(0, 200)}`)
+
+  const after = await countRows('rate_ledger')
+  const removed = total - after
+  if (removed > before) {
+    throw new Error(`${loader}: 소유 범위(${before}행)보다 많은 ${removed}행이 지워졌다 — 즉시 확인할 것`)
+  }
+  return removed
+}
+
 /** 배치 insert (PostgREST). 500행씩 끊는다. */
 export async function insertRows(table: string, rows: unknown[], prefer = 'return=minimal'): Promise<void> {
   for (let i = 0; i < rows.length; i += 500) {
