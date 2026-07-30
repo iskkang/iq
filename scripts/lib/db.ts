@@ -156,12 +156,43 @@ export function assertOwned(loader: keyof typeof OWNED | string, rows: Array<{ p
  * 검증(verifiedWrite)은 사후 탐지였다 — 17,583행이 지워진 뒤에 알려줬다.
  * 이건 예방이다.
  */
+/**
+ * 아카이브 판정 — **프로그램 목록이 아니라 조건으로 본다.**
+ *
+ * `effective_to` 가 과거인 행은 아카이브이며 불변이다. 어느 로더도 지우거나
+ * 고칠 수 없다. 목록으로 관리하면 122 는 넣어도 언젠가 강제노동 301 이 끝날 때
+ * 또 손대야 하고, 그때 잊는다. 조건이면 자동으로 보호된다.
+ *
+ * 왜 보존하는가: 과거 선적을 그 시점 세율로 다시 계산할 수 있어야 하고
+ * (클레임 대응), 감사 추적이 남아야 한다.
+ */
+const ARCHIVE_SAFE = () => {
+  const today = new Date().toISOString().slice(0, 10)
+  // 열려 있거나(만료 없음) 아직 만료 전인 행만 대상 — 나머지는 아카이브다
+  return `or=(effective_to.is.null,effective_to.gte.${today})`
+}
+
+/** 아카이브(만료) 행 수 — 삭제 전후로 비교해 한 행도 안 사라졌는지 본다 */
+export async function countArchived(): Promise<number> {
+  const today = new Date().toISOString().slice(0, 10)
+  return countRows('rate_ledger', `effective_to=lt.${today}`)
+}
+
+/**
+ * 소유 범위 안의 **살아 있는** 행만 지운다.
+ *
+ * 세 겹으로 막는다:
+ *   1. 소유 program_code 밖은 필터에서 제외
+ *   2. 아카이브(만료) 행은 필터에서 제외 — 조건 판정이라 미래 만료도 자동 보호
+ *   3. 삭제 후 아카이브 행 수가 줄었으면 실패 (필터가 새면 여기서 걸린다)
+ */
 export async function deleteOwned(loader: keyof typeof OWNED | string): Promise<number> {
   const owned = OWNED[loader]
   if (!owned) throw new Error(`알 수 없는 로더: ${loader}`)
-  const filter = `program_code=in.(${owned.join(',')})`
+  const filter = `program_code=in.(${owned.join(',')})&${ARCHIVE_SAFE()}`
   const before = await countRows('rate_ledger', filter)
   const total = await countRows('rate_ledger')
+  const archivedBefore = await countArchived()
   if (before > total) throw new Error(`${loader}: 삭제 대상(${before})이 전체(${total})보다 많다 — 필터가 잘못됐다`)
 
   const res = await fetch(`${dbUrl()}/rest/v1/rate_ledger?${filter}`, {
@@ -174,6 +205,13 @@ export async function deleteOwned(loader: keyof typeof OWNED | string): Promise<
   const removed = total - after
   if (removed > before) {
     throw new Error(`${loader}: 소유 범위(${before}행)보다 많은 ${removed}행이 지워졌다 — 즉시 확인할 것`)
+  }
+  const archivedAfter = await countArchived()
+  if (archivedAfter < archivedBefore) {
+    throw new Error(
+      `${loader}: 아카이브 행이 ${archivedBefore - archivedAfter}건 사라졌다 (${archivedBefore} → ${archivedAfter}). ` +
+        '만료 행은 불변이어야 한다 — 필터가 샜다.',
+    )
   }
   return removed
 }

@@ -106,8 +106,20 @@ async function main() {
   // 건드릴 수 있는 program_code 는 OWNED['seed:rates'] 뿐이다. 예전에는 필터를
   // CSV 분포에서 만들어, CSV 에 mfn 표본이 있다는 이유로 USITC 17,583행을 지웠다.
   const owned = OWNED['seed:rates']
-  const rates = all.filter((r) => owned.includes(String(r.program_code)))
-  const dropped = all.length - rates.length
+  const today = new Date().toISOString().slice(0, 10)
+  const rates = all.filter((r) => {
+    if (!owned.includes(String(r.program_code))) return false
+    // 만료 행은 아카이브다 — 불변이고 이미 DB 에 있다. 다시 넣으면 중복이 된다.
+    // deleteOwned 가 아카이브를 보호하므로 지워지지도 않는다 (설계상 정합).
+    const to = r.effective_to
+    return !(typeof to === 'string' && to < today)
+  })
+  const archived = all.filter((r) => {
+    const to = r.effective_to
+    return owned.includes(String(r.program_code)) && typeof to === 'string' && to < today
+  }).length
+  if (archived > 0) console.log(`  아카이브(만료) ${archived}행은 건너뜀 — 만료 행은 불변이다`)
+  const dropped = all.length - rates.length - archived
   if (dropped > 0) {
     console.log(`  소유 범위 밖 ${dropped}행 제외 (mfn 은 hts:seed, 중국 301 은 seed:301 소관)`)
   }
