@@ -15,6 +15,7 @@
  * 실행: npm run check:docs (npm run check 에 포함)
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, relative } from 'node:path'
 import { collectTables } from './lib/migrations'
@@ -40,6 +41,20 @@ function markdownFiles(): string[] {
 
 const scripts = new Set(Object.keys(JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8')).scripts ?? {}))
 const tables = collectTables()
+
+/**
+ * git 이 추적하는 파일 목록.
+ *
+ * 검사 대상을 여기로 한정한다. 추적되지 않는 산출물(data/hts_lines.json 등)은
+ * 로컬에만 있고 CI 체크아웃에는 없어서, 그걸 검사하면 **로컬에서만 통과하는
+ * 검사**가 된다. 이 스크립트를 처음 넣었을 때 정확히 그렇게 CI 가 깨졌다.
+ */
+const tracked = new Set(
+  execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf-8' })
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean),
+)
 
 for (const file of markdownFiles()) {
   const rel = relative(root, file).replace(/\\/g, '/')
@@ -79,6 +94,10 @@ for (const file of markdownFiles()) {
     // **경로만 검사한다.** `main.tsx` 처럼 맨 파일명은 산문 속 참조이지 경로가
     // 아니다 — 그걸 "파일 없음" 으로 잡으면 오탐이 문서 전체를 덮어 검사가 꺼진다.
     if (!p.includes('/')) continue
+    // **git 이 추적하지 않는 산출물은 검사하지 않는다.** data/hts_lines.json 같은
+    // 파일은 로컬에만 있고 CI 체크아웃에는 없다. 로컬에서만 통과하는 검사는
+    // 검사가 아니다 — 실제로 이걸로 CI 를 깨뜨렸다.
+    if (!tracked.has(p)) continue
     if (!existsSync(join(root, p))) fail.push(`${rel}: ${p} — 파일이 없다`)
   }
 
