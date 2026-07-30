@@ -3,7 +3,7 @@
 <head>
   <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18359222502"></script>
   <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','AW-18359222502')</script>
-  <script src="/ads.js"></script>
+  <script src="/ads.js?v=20260731-2"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LandedIQ — Know your true margin after tariffs</title>
@@ -29,9 +29,9 @@ const CONFIG={SUPABASE_URL:'%VITE_SUPABASE_URL%',SUPABASE_ANON_KEY:'%VITE_SUPABA
 </script>
 
 <header class="border-b border-white/10 bg-slate-950/95">
-  <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4">
+  <div class="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-5">
     <a href="/" class="flex shrink-0 items-center gap-2.5"><span class="rounded-lg bg-indigo-500 px-2.5 py-1.5 text-sm font-black">LIQ</span><span class="text-lg font-semibold">LandedIQ</span></a>
-    <div class="flex items-center gap-3 text-sm sm:gap-4"><a href="/hts" data-event="hero_hts_click" class="hidden text-slate-300 hover:text-white sm:inline">Free HTS lookup</a><a href="#signup" data-event="hero_cta_click" class="whitespace-nowrap rounded-lg bg-indigo-500 px-3.5 py-2 font-semibold text-white sm:px-4">Join the beta</a></div>
+    <div class="flex items-center gap-2 text-xs sm:gap-4 sm:text-sm"><a href="/hts" data-event="hero_hts_click" class="whitespace-nowrap rounded-lg border border-white/15 px-3 py-2 font-semibold text-slate-100 hover:border-indigo-400 hover:text-white">Free HTS</a><a href="#pricing" data-event="hero_cta_click" class="whitespace-nowrap rounded-lg bg-indigo-500 px-3 py-2 font-semibold text-white sm:px-4">$19 Beta</a></div>
   </div>
 </header>
 
@@ -39,15 +39,19 @@ const CONFIG={SUPABASE_URL:'%VITE_SUPABASE_URL%',SUPABASE_ANON_KEY:'%VITE_SUPABA
 <section id="signup" class="grid-bg border-b border-white/10">
   <div class="mx-auto grid max-w-6xl gap-12 px-5 py-16 lg:grid-cols-[minmax(0,1fr)_minmax(460px,.92fr)] lg:items-start lg:gap-16 lg:py-24">
     <div class="flex min-w-0 flex-col justify-center lg:min-h-[500px]">
-      <p class="w-fit rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200">Working beta · Workflow still in development</p>
+      <p class="w-fit rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-200">Working beta · Starter plan $19/month</p>
       <h1 id="headline" class="mt-5 whitespace-pre-line text-4xl font-black leading-[1.06] tracking-tight sm:text-5xl xl:text-6xl"></h1>
       <p id="subhead" class="mt-6 max-w-2xl text-lg leading-8 text-slate-300"></p>
-      <form class="signup-form mt-8 grid max-w-xl gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" data-intent="hero">
+      <div class="mt-8 flex max-w-xl flex-col gap-3 sm:flex-row">
+        <a href="/hts" data-event="hero_hts_click" class="rounded-xl bg-indigo-500 px-6 py-3.5 text-center font-bold text-white hover:bg-indigo-400">Try Free HTS Lookup</a>
+        <a href="#pricing" class="rounded-xl border border-white/20 px-6 py-3.5 text-center font-bold text-white hover:border-indigo-400">See Starter Beta — $19/month</a>
+      </div>
+      <form class="signup-form mt-5 grid max-w-xl gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" data-intent="hero">
         <input type="email" name="email" required autocomplete="email" placeholder="you@yourstore.com" class="min-w-0 rounded-xl border border-white/15 bg-white px-4 py-3.5 text-slate-900 outline-none focus:border-indigo-400" />
         <input type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px" />
-        <button type="submit" class="whitespace-nowrap rounded-xl bg-indigo-500 px-6 py-3.5 font-bold text-white hover:bg-indigo-400">Join the beta</button>
+        <button type="submit" class="whitespace-nowrap rounded-xl bg-slate-700 px-6 py-3.5 font-bold text-white hover:bg-slate-600">Join $19 Beta List</button>
       </form>
-      <p class="form-note mt-3 text-sm leading-6 text-slate-400">No payment · Core tariff calculations are live; product workflow is still being completed.</p>
+      <p class="form-note mt-3 text-sm leading-6 text-slate-400">Planned Starter Beta price: $19/month. No payment is collected during the current validation stage.</p>
       <div class="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3 text-sm"><a href="/sample-report.html" data-event="sample_report_open" class="font-semibold text-indigo-300 hover:text-indigo-200">View sample output →</a><a href="/hts" data-event="hero_hts_click" class="font-semibold text-indigo-300 hover:text-indigo-200">Try free HTS lookup →</a></div>
     </div>
 
@@ -83,8 +87,17 @@ const CONFIG={SUPABASE_URL:'%VITE_SUPABASE_URL%',SUPABASE_ANON_KEY:'%VITE_SUPABA
   </div>
 </section>
 
+<section id="pricing" class="liq-pricing border-y border-white/10 bg-slate-900/70 px-5 py-16 sm:py-20">
+  <div class="mx-auto max-w-3xl rounded-3xl border border-indigo-400/40 bg-slate-950 p-7 shadow-2xl shadow-black/30 sm:p-10">
+    <div class="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between"><div><p class="text-xs font-black uppercase tracking-[.18em] text-indigo-300">Starter Beta</p><h2 class="mt-3 text-3xl font-bold">Landed-cost intelligence for import sellers</h2></div><div class="text-5xl font-black tracking-tight">$19<span class="text-base font-semibold text-slate-400">/month</span></div></div>
+    <div class="mt-8 grid gap-3 text-sm text-slate-300 sm:grid-cols-2"><p>✓ Unlimited landed-cost reports</p><p>✓ Margin analysis by SKU</p><p>✓ Pricing recommendations</p><p>✓ HTS monitoring</p><p>✓ CSV product uploads</p><p>✓ Early-access features</p></div>
+    <div class="mt-8 flex flex-col gap-3 sm:flex-row"><a href="#signup" class="rounded-xl bg-indigo-500 px-6 py-3.5 text-center font-bold text-white hover:bg-indigo-400">Start Beta — $19/month</a><a href="/hts" class="rounded-xl border border-white/20 px-6 py-3.5 text-center font-bold text-white hover:border-indigo-400">Try Free HTS Lookup</a></div>
+    <p class="mt-5 text-sm leading-6 text-slate-400">No payment is collected during the current validation stage. The planned Starter Beta price is $19/month.</p>
+  </div>
+</section>
+
 <section class="border-y border-white/10 bg-white text-slate-900">
-  <div class="mx-auto max-w-3xl px-5 py-14 text-center sm:py-16"><h2 class="text-3xl font-bold">Would this be useful for your business?</h2><p class="mx-auto mt-3 max-w-2xl leading-7 text-slate-600">Join the beta list. Your signup helps determine whether and how quickly the full workflow is completed.</p><form class="signup-form mx-auto mt-7 grid max-w-xl gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" data-intent="footer"><input type="email" name="email" required autocomplete="email" placeholder="you@yourstore.com" class="min-w-0 rounded-xl border border-slate-300 px-4 py-3.5 outline-none focus:border-indigo-500" /><input type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px" /><button type="submit" class="whitespace-nowrap rounded-xl bg-indigo-600 px-6 py-3.5 font-bold text-white">Join the beta</button></form><p class="form-note mt-3 text-sm text-slate-500">No payment. Access is provided in small beta batches.</p></div>
+  <div class="mx-auto max-w-3xl px-5 py-14 text-center sm:py-16"><h2 class="text-3xl font-bold">Would this be useful for your business?</h2><p class="mx-auto mt-3 max-w-2xl leading-7 text-slate-600">Join the Starter Beta list or begin with the free HTS lookup.</p><div class="mx-auto mt-7 flex max-w-xl flex-col gap-3 sm:flex-row sm:justify-center"><a href="/hts" class="rounded-xl border border-slate-300 px-6 py-3.5 font-bold text-slate-800">Try Free HTS Lookup</a><a href="#signup" class="rounded-xl bg-indigo-600 px-6 py-3.5 font-bold text-white">Join $19 Beta List</a></div></div>
 </section>
 </main>
 
@@ -98,7 +111,7 @@ function track(name,props){props=props||{};window.plausible&&window.plausible(na
 track('landing_view');document.querySelectorAll('[data-event]').forEach(el=>el.addEventListener('click',()=>track(el.dataset.event)));
 async function saveLead(body){if(missing())throw new Error('config');const r=await fetch(CONFIG.SUPABASE_URL+'/rest/v1/leads',{method:'POST',headers:{'Content-Type':'application/json',apikey:CONFIG.SUPABASE_ANON_KEY,Authorization:'Bearer '+CONFIG.SUPABASE_ANON_KEY,Prefer:'return=minimal'},body:JSON.stringify(body)});if(r.status!==409&&!r.ok)throw new Error('lead '+r.status)}
 function done(form){const p=document.createElement('p');p.className='rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 font-semibold text-emerald-800';p.textContent="Thanks — you're on the beta list.";const note=form.parentElement.querySelector('.form-note');form.replaceWith(p);note&&note.remove()}
-document.querySelectorAll('.signup-form').forEach(form=>form.addEventListener('submit',async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form).entries());if(data.company)return done(form);const intent=form.dataset.intent||'signup';track('signup_started',{intent:intent});const btn=form.querySelector('button');btn.disabled=true;btn.textContent='Joining…';try{await saveLead({email:data.email,intent:intent,variant,page:location.pathname,...utm});track('signup_completed',{intent:intent});window.trackConversion&&window.trackConversion('signup');done(form)}catch(err){track('signup_failed',{intent:intent});btn.disabled=false;btn.textContent='Join the beta';let m=form.querySelector('.err');if(!m){m=document.createElement('p');m.className='err w-full text-xs text-rose-500';form.appendChild(m)}m.textContent='Something went wrong — please try again.'}}))
+document.querySelectorAll('.signup-form').forEach(form=>form.addEventListener('submit',async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form).entries());if(data.company)return done(form);const intent=form.dataset.intent||'signup';track('signup_started',{intent:intent});const btn=form.querySelector('button');btn.disabled=true;btn.textContent='Joining…';try{await saveLead({email:data.email,intent:intent,variant,page:location.pathname,...utm});track('signup_completed',{intent:intent});window.trackConversion&&window.trackConversion('signup');done(form)}catch(err){track('signup_failed',{intent:intent});btn.disabled=false;btn.textContent='Join $19 Beta List';let m=form.querySelector('.err');if(!m){m=document.createElement('p');m.className='err w-full text-xs text-rose-500';form.appendChild(m)}m.textContent='Something went wrong — please try again.'}}))
 </script>
 </body>
 </html>
