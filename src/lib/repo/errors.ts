@@ -11,6 +11,25 @@
  */
 export type ReferenceDataErrorKind = 'config' | 'coverage'
 
+/**
+ * ── 새 참조 테이블이 생겼을 때: 0행을 실패로 볼 것인가 ──────────────
+ *
+ * 판정 기준은 "0행이 정상인가" 가 아니다. **0행이 숫자를 어느 방향으로 미는가** 다.
+ *
+ *   0행이 관세를 **낮추면**(과소계상)  → 명시적 실패
+ *   0행이 관세를 **높이거나 중립이면** → 정상 상태로 취급
+ *
+ * 지금까지의 적용:
+ *   rate_ledger        비면 duty 0 → 과소계상 → 실패
+ *   duty_programs      비면 적용 프로그램 없음 → 과소계상 → 실패
+ *   fee_settings       비면 MPF/HMF 누락 → 과소계상 → 실패
+ *   program_exclusions 비면 전액 부과 → 안전한 방향 → 정상 (현재 실제로 0행)
+ *
+ * 미검증 면제를 적용하지 않기로 한 것(exclusionStatus 의 unverified)과 같은
+ * 원칙이다 — 과대계상은 고객이 예산을 넉넉히 잡을 뿐이지만, 과소계상은 가격을
+ * 잘못 매겨 마진을 잃는다. 이 제품이 없애준다고 약속한 바로 그 손해다.
+ */
+
 export class ReferenceDataError extends Error {
   readonly kind: ReferenceDataErrorKind
   readonly table: string
