@@ -15,6 +15,7 @@ const root = dirname(fileURLToPath(import.meta.url))
  *   /privacy   privacy.html    개인정보 고지
  *   /sample-report.html            엔진이 생성한 샘플 리포트 (하단 이메일 폼)
  *   /hts       hts.html        공개 HTS 조회 (hts-lookup Edge Function 호출)
+ *   /section-301  section-301.html  중국 301 리스트 안내 + 조회 (원산지 CN 고정)
  *
  * 예전에는 index.html 이 SPA 하나뿐이라 landing.html·privacy.html 이 dist 에
  * 들어가지 않았고, vercel.json 이 모든 경로를 SPA 로 rewrite 해서 / 가 곧장
@@ -30,6 +31,7 @@ export default defineConfig({
         privacy: resolve(root, 'privacy.html'),
         sampleReport: resolve(root, 'sample-report.html'),
         hts: resolve(root, 'hts.html'),
+        section301: resolve(root, 'section-301.html'),
       },
     },
   },

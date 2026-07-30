@@ -5,6 +5,7 @@
     { "source": "/b", "destination": "/" },
     { "source": "/c", "destination": "/" },
     { "source": "/app/(.*)", "destination": "/app" },
-    { "source": "/hts/(.*)", "destination": "/hts" }
+    { "source": "/hts/(.*)", "destination": "/hts" },
+    { "source": "/section-301/(.*)", "destination": "/section-301" }
   ]
 }
