@@ -79,7 +79,14 @@ export interface AppliedProgram {
   exclusion: ExclusionStatus
 }
 
-function inEffect(from: string, to: string | null, asOf: string): boolean {
+/**
+ * 발효 구간 판정 — `[from, to)` 반열림. **만료일 당일부터 미적용.**
+ *
+ * 발효일을 가진 참조 테이블 전부가 이 규칙을 쓴다 (rate_ledger · duty_programs ·
+ * program_exclusions · fee_settings). export 하는 이유는 규칙이 한 곳에만 있어야
+ * 하고, 테스트가 그 한 곳에 닿을 수 있어야 하기 때문이다.
+ */
+export function inEffect(from: string, to: string | null, asOf: string): boolean {
   if (from > asOf) return false
   if (to !== null && to <= asOf) return false // 만료일 당일부터 미적용
   return true
