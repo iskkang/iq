@@ -54,6 +54,43 @@ SQL Editor 에서:
 
 
 
+### 반영 절차 — 현행 행의 `effective_to` 는 비워둔다
+
+**규칙: 현행 행의 `effective_to` 는 항상 비워두고, 후속 행을 넣는 것과 같은
+트랜잭션에서만 채운다.**
+
+만료를 존중하게 된 뒤 새로 생긴 위험이다. 현행 행에 `effective_to` 만 채우고
+후속 행을 안 넣으면 그 날짜부터 **덮는 행이 하나도 없어져 전 리포트가 멈춘다.**
+FY2027 조정(2026-10-01)이 첫 시험대다.
+
+```sql
+begin;
+  -- 1) 신규 행을 먼저 넣는다
+  insert into public.fee_settings (mpf_rate, mpf_min_usd, mpf_max_usd, hmf_rate,
+                                   effective_from, source)
+  values (...);
+  -- 2) 그 다음에 직전 행을 닫는다
+  update public.fee_settings
+     set effective_to = <신규 발효일>
+   where effective_to is null and effective_from < <신규 발효일>;
+commit;
+```
+
+순서도 중요하다 — 신규 행을 **먼저** 넣는다. 반대로 하면 두 문장 사이에 커버
+공백이 생긴다. 같은 규칙이 `rate_ledger` · `duty_programs` · `program_exclusions`
+에도 적용된다.
+
+### 열린 항목 — 면제 우선순위 (471개 적재 시 검토)
+
+현재 `exclusionStatus` 는 "확인된 면제가 하나라도 있으면 confirmed" 다. 그런데
+confirmed 가 8자리 광범위 매칭이고 unverified 가 10자리 정밀 매칭이면, **덜
+구체적인 행을 근거로 0% 를 적용**하게 된다 — 비대칭 원칙(의심스러우면 전액
+부과)과 반대 방향이다.
+
+현재 `program_exclusions` 는 0행이라 발생하지 않는다. 강제노동 301 의 471개
+소호를 적재할 때 **실제로 그런 중첩이 있는지 먼저 확인할 것.** 없으면 현행 규칙
+유지, 있으면 구체성 우선 → 그다음 검증 상태 순으로 바꾼다.
+
 ### 날짜가 박힌 점검 (놓치면 값이 조용히 낡는다)
 
 | 날짜 | 무엇 | 근거 |

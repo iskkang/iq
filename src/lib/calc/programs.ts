@@ -112,6 +112,11 @@ export function exclusionStatus(
   )
   if (hit.length === 0) return 'none'
   // 하나라도 확인된 면제가 있으면 면제다. 전부 미확인이면 부과하고 알린다.
+  //
+  // TODO(471개 적재 시): confirmed 가 8자리 광범위이고 unverified 가 10자리 정밀인
+  // 중첩이 있으면, 덜 구체적인 행을 근거로 0% 를 적용하게 된다 — 비대칭 원칙과
+  // 반대다. 적재 전에 실제 중첩 유무를 확인하고, 있으면 구체성 우선 → 검증 상태
+  // 순으로 바꿀 것. (docs/rate-ledger-sop.md 열린 항목)
   return hit.some((e) => !(e.source ?? '').startsWith('UNVERIFIED')) ? 'confirmed' : 'unverified'
 }
 
