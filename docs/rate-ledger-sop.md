@@ -52,7 +52,27 @@ CI 의 스키마 검사(scripts/check-schema.ts)는 **마이그레이션 선언*
 
 SQL Editor 에서:
 
+```sql
+-- 1) 참조 테이블에 발효일·근거 컬럼이 실제로 있는가
+select c.table_name,
+       bool_or(c.column_name = 'effective_from') as has_from,
+       bool_or(c.column_name = 'effective_to')   as has_to,
+       bool_or(c.column_name = 'source')         as has_source
+  from information_schema.columns c
+ where c.table_schema = 'public'
+   and c.table_name in ('rate_ledger','duty_programs','fee_settings','program_exclusions')
+ group by c.table_name
+ order by c.table_name;
+-- 셋 중 하나라도 false 면 마이그레이션 선언과 DB 가 어긋난 것이다
 
+-- 2) 참조 테이블이 비어 있지 않은가 (빈 테이블 = 조용한 폴백의 원인)
+select 'rate_ledger' as t, count(*) from public.rate_ledger
+union all select 'duty_programs', count(*) from public.duty_programs
+union all select 'fee_settings',  count(*) from public.fee_settings;
+
+-- 3) 열린 행이 키당 하나인가 (부분 유니크 인덱스가 막지만 확인은 별개)
+select count(*) as open_fee_rows from public.fee_settings where effective_to is null;
+```
 
 ### 요율을 갱신했으면 샘플 fixture 도 함께 갱신한다
 
@@ -158,8 +178,9 @@ confirmed 가 8자리 광범위 매칭이고 unverified 가 10자리 정밀 매�
 | **2026-10-01** | MPF 최소·최대 FY2027 조정 | 19 CFR 24.22·24.23 FAST Act 물가연동. 매년 10/1 시행 |
 | 매년 10-01 | 이후 반복 | 종가율 0.3464%·HMF 0.125% 는 통상 불변, 최소·최대만 바뀐다 |
 
-절차: 관보/CSMS 로 새 min·max 확인 →  에 신규 행(effective_from =
-10-01, source = 관보 인용) → 직전 행에 effective_to = 같은 날 → 골든 재실행.
+절차: 관보/CSMS 로 새 min·max 확인 → 한 트랜잭션에서 `fee_settings` 의 직전 행에
+`effective_to` = 새 발효일을 채우고 신규 행 insert (순서는 위 "반영 절차" 참조)
+→ `npm run sample:build` 로 fixture 갱신 → 골든 재실행.
 
 **실전 사례.** FY2026 값을 기억에서 꺼내 넣었다가 한 사이클 지난 FY2025 값
 (min $32.71 / max $634.62)을 현행처럼 적재했다. 실제는 90 FR 34665
@@ -252,7 +273,7 @@ List 4A(7.5%)·미지정이 섞여 있다. 적용 대상은 `U.S. note 20(x)` �
 - [ ] 종료된 프로그램을 삭제가 아니라 `effective_to` 로 처리하는 이유를 안다
 - [ ] §3 의 네 가지 함정을 각각 예시로 설명할 수 있다
 
-### 커밋 전 세 질문 — 이게 실제로 오류를 잡는다
+### 커밋 전 네 질문 — 이게 실제로 오류를 잡는다
 
 CI·제약·테스트는 **이미 아는 실패 방식**만 막는다. 지금까지 잡힌 오류를 되짚어
 보면 장치가 아니라 "정말 확인했는가" 를 되묻는 과정에서 드러났다. 그 역할이
@@ -263,11 +284,20 @@ CI·제약·테스트는 **이미 아는 실패 방식**만 막는다. 지금까
 1. **이 세율을 1차 출처와 대조했는가, 아니면 기억에서 왔는가?**
 2. **이 절차를 실제로 돌려봤는가, 아니면 그럴 것이라고 추론했는가?**
 3. **선언(스키마·README·주석)과 동작(실제 코드 경로)이 일치하는지 확인했는가?**
+4. **이 변경이 새로운 전제조건을 요구하는가?** (트랜잭션·자격증명·데이터 존재·네트워크)
+   요구한다면 **네 실행 환경 전부**에서 충족되는지 확인했는가:
+   **로컬 / GitHub Actions / Vercel 빌드 / pg_cron 워커**
 
 하나라도 "아니오" 면 그 부분은 커밋하지 말고 확인부터 한다. 확인이 불가능하면
 `UNVERIFIED` 로 표시하고 넘어간다 — 확인한 것처럼 적는 것이 가장 나쁘다.
 
-<details><summary>실제로 걸린 사례 (전부 이 셋 중 하나)</summary>
+> **4번을 환경 목록으로 적는 이유.** "모든 환경에서 되는지 확인" 이라고 쓰면
+> 다음 사람이 로컬만 보고 넘어간다. 실제로 두 번 그랬다 — 부분 유니크 인덱스는
+> 트랜잭션을, DB 수수료는 자격증명을 새로 요구했고 **둘 다 로컬에서는 충족되고
+> 다른 환경에서는 안 됐다.** 장치를 추가할 때 그 장치가 만드는 새 의존을 세는
+> 습관이 없으면, 안전장치가 다른 안전장치를 깨뜨린다.
+
+<details><summary>실제로 걸린 사례</summary>
 
 | 오류 | 걸리는 질문 |
 |---|---|
