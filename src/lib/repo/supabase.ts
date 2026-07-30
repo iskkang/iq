@@ -8,7 +8,7 @@ import type { DutyProgram, ProgramExclusion } from '../calc/programs'
 import { resolveStatus } from '../classify/status'
 import type { ClassifyBatchResult } from '../classify/types'
 import type { ParsedItemRow } from '../csv/parseItems'
-import { DEFAULT_FEES } from '../seedRates'
+import { ReferenceDataError } from './errors'
 import { SAMPLE_ITEMS, sampleShipment } from './sampleShipment'
 import type { ClassificationProgress, Item, ItemPatch, NewShipment, Repo, Shipment } from './types'
 
@@ -259,6 +259,10 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
         if (rows.length < page) break
         from += page
       }
+      // 원장이 통째로 비면 모든 duty 가 0 이 되고, 도달 가능한 프로그램이 없어
+      // 경고조차 뜨지 않는다 — 전체 장애가 정상 리포트로 나가는 최악의 형태다.
+      // 이건 데이터 상태가 아니라 배포·설정 실패이므로 명시적으로 실패한다.
+      if (all.length === 0) throw ReferenceDataError.config("rate_ledger")
       return all
     },
     async getPrograms(): Promise<DutyProgram[]> {
@@ -266,8 +270,12 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
         .from('duty_programs')
         .select('code, name, authority, rate_type, scope_type, effective_from, effective_to, source, note')
       throwIf(error, 'Failed to load duty programs')
-      return (data ?? []) as DutyProgram[]
+      const rows = (data ?? []) as DutyProgram[]
+      if (rows.length === 0) throw ReferenceDataError.config("duty_programs")
+      return rows
     },
+    // 0행이 정상이다 — 면제가 없다는 것은 유효한 상태이고, 실제로 현재 0행이다.
+    // rate_ledger/duty_programs 와 달리 여기서 실패시키면 안 된다.
     async getExclusions(): Promise<ProgramExclusion[]> {
       const all: ProgramExclusion[] = []
       let from = 0
@@ -286,15 +294,30 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
       return all
     },
     async getFees(asOf: string): Promise<FeeSettings> {
+      // effective_to 를 존중한다. 예전에는 effective_from 최신 행만 집어서,
+      // 만료된 행 뒤에 후속 행이 없으면 그 만료 행이 계속 쓰였다 — 컬럼은 있는데
+      // 읽지 않는, 이 저장소가 반복해서 당한 그 패턴이다.
       const { data, error } = await supabase
         .from('fee_settings')
         .select('*')
         .lte('effective_from', asOf)
+        .or(`effective_to.is.null,effective_to.gt.${asOf}`)
         .order('effective_from', { ascending: false })
         .limit(1)
         .maybeSingle()
       throwIf(error, 'Failed to load fee settings')
-      if (!data) return DEFAULT_FEES
+
+      // 덮는 행이 없을 때 두 갈래를 구분한다. 뭉치면 전체 장애가 "날짜를
+      // 확인하세요" 로 나가고 아무도 원인을 못 찾는다.
+      if (!data) {
+        const { count, error: cErr } = await supabase
+          .from('fee_settings')
+          .select('*', { count: 'exact', head: true })
+        throwIf(cErr, 'Failed to check fee settings')
+        throw (count ?? 0) === 0
+          ? ReferenceDataError.config('fee_settings')
+          : ReferenceDataError.coverage('fee_settings', asOf)
+      }
       return {
         mpf_rate: Number(data.mpf_rate),
         mpf_min_usd: Number(data.mpf_min_usd),
