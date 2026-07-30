@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import { trackEvent } from './lib/analytics'
 import { getRepo } from './lib/repo'
 import { AuthPage } from './pages/AuthPage'
 import { ShipmentDetailPage } from './pages/ShipmentDetailPage'
@@ -16,6 +17,10 @@ export default function App() {
       repo.getUserEmail().then((e) => {
         setEmail(e)
         setReady(true)
+        if (e && !localStorage.getItem('landediq_verified_account_tracked')) {
+          trackEvent('email_verified')
+          localStorage.setItem('landediq_verified_account_tracked', '1')
+        }
       })
     refresh()
     return repo.onAuthChange(refresh)
@@ -24,14 +29,9 @@ export default function App() {
   if (!ready) return null
   if (!email) return <AuthPage onSignedIn={() => repo.getUserEmail().then(setEmail)} />
 
-  // 앱은 /app 아래에 배포된다 (/ 는 랜딩 페이지). vite.config.ts 멀티페이지 참조.
   return (
     <BrowserRouter basename="/app">
-      <Layout
-        email={email}
-        demo={repo.mode === 'demo'}
-        onSignOut={() => repo.signOut().then(() => setEmail(null))}
-      >
+      <Layout email={email} demo={repo.mode === 'demo'} onSignOut={() => repo.signOut().then(() => setEmail(null))}>
         <Routes>
           <Route path="/" element={<ShipmentsPage />} />
           <Route path="/shipment/:id" element={<ShipmentDetailPage />} />
