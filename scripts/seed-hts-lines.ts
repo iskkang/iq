@@ -103,6 +103,10 @@ async function main() {
   const rateRows = lines
     .filter((l) => l.adValorem !== null)
     .map((l) => ({
+      // 0004 에서 program_code 가 NOT NULL 이 됐는데 이 스크립트가 안 따라갔다.
+      // 그래서 복구 시도가 23502 로 죽었다 — 스키마 변경 때 적재 경로를 같이
+      // 확인하지 않으면 "다음에 필요할 때" 발견된다.
+      program_code: 'mfn',
       hts_code: l.code,
       origin_country: null,
       layer: 'base_mfn',

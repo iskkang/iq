@@ -1,76 +1,65 @@
 /**
- * rate 원장 시드 스크립트 (스펙 §1-4, §8).
+ * duty_programs · rate_ledger 시드 적재.
  *
- * 기본: 동봉된 hts_seed_50.csv(테스트용 base MFN 50개 + 301/IEEPA 예시)를 적재.
- * 옵션: --usitc <file> — hts.usitc.gov 에서 내려받은 공식 CSV export에서
- *        ad valorem(%) general rate만 추출해 base_mfn 레이어로 적재.
- *        (301·IEEPA는 원칙상 관리자 수기 입력 — 자동 스크래핑 금지)
+ * ── 다시 쓴 이유 ─────────────────────────────────────────────────
+ * 이전 판은 **한 번도 성공한 적이 없었다.** 조용한 실패가 셋 겹쳐 있었다:
+ *   1. SUPABASE_URL 만 읽는데 .env 는 VITE_SUPABASE_URL 이었다
+ *   2. 이름을 맞춰도 supabase-js 가 Node 20 에서 죽는다 (WebSocket 부재)
+ *   3. duty_programs 를 아예 적재하지 않았다 — 그래서 프로그램이 없어
+ *      세율 행이 FK 위반으로 들어갈 수도 없었다
+ * 결과: 강제노동 301 이 원장에 없는 채로 몇 세션이 지났고 프로덕션이 관세를
+ * 과소계상했다. "실행했다" 와 "들어갔다" 는 다르다.
  *
- * 사용:
- *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed:rates
- *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run seed:rates -- --usitc ./htsdata.csv
+ * 이제 PostgREST 로 쓰고 **쓰기 전후 행수를 DB 에서 다시 읽어** 확인한다.
+ * 0건 삽입은 언제나 실패다.
+ *
+ * fee_settings 는 여기서 건드리지 않는다. 이전 판이 FY2025 값을 upsert 해서
+ * 마이그레이션으로 넣은 FY2026 을 덮어썼다 — 요율 이력은 마이그레이션이 관리한다.
+ *
+ * 실행: npm run seed:rates
+ *       npm run seed:rates -- --usitc ./htsdata.csv [effective_from]
  */
-import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import Papa from 'papaparse'
+import { countRows, dbUrl, insertRows, serviceKey, verifiedWrite } from '../../scripts/lib/db'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const here = dirname(fileURLToPath(import.meta.url))
 
-const url = process.env.SUPABASE_URL
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-if (!url || !key) {
-  console.error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY env vars are required.')
-  process.exit(1)
-}
-const supabase = createClient(url, key)
+type Row = Record<string, string | number | null>
 
-interface SeedRow {
-  hts_code: string
-  origin_country: string | null
-  layer: string
-  ad_valorem_rate: number
-  effective_from: string
-  effective_to: string | null
-  source: string | null
-  note: string | null
-}
-
-function loadBundledSeed(): SeedRow[] {
-  const csv = readFileSync(join(__dirname, 'hts_seed_50.csv'), 'utf-8')
-  const parsed = Papa.parse<Record<string, string>>(csv, { header: true, skipEmptyLines: true })
-  return parsed.data.map((r) => ({
-    hts_code: r.hts_code.trim(),
-    origin_country: r.origin_country?.trim() ? r.origin_country.trim().toUpperCase() : null,
-    layer: r.layer.trim(),
-    ad_valorem_rate: Number(r.ad_valorem_rate),
-    effective_from: r.effective_from.trim(),
-    effective_to: r.effective_to?.trim() ? r.effective_to.trim() : null,
-    source: r.source?.trim() || null,
-    note: r.note?.trim() || null,
-  }))
-}
-
-/**
- * USITC 공식 CSV export 파서 (hts.usitc.gov → Export → CSV).
- * 'HTS Number' + 'General Rate of Duty' 컬럼에서 "N%" 형태의 종가세만 추출.
- * Free → 0. 종량세/복합세("$0.02/kg + 4%")는 MVP 미지원이라 건너뛰고 개수만 보고.
- */
-function loadUsitcCsv(file: string, effectiveFrom: string): SeedRow[] {
+function parse(file: string): Row[] {
   const csv = readFileSync(file, 'utf-8')
-  const parsed = Papa.parse<Record<string, string>>(csv, { header: true, skipEmptyLines: true })
-  const rows: SeedRow[] = []
+  const { data } = Papa.parse<Record<string, string>>(csv, { header: true, skipEmptyLines: true })
+  return data
+    .filter((r) => Object.values(r).some((v) => v?.trim()))
+    .map((r) => {
+      const o: Row = {}
+      for (const [k, v] of Object.entries(r)) o[k.trim()] = v?.trim() ? v.trim() : null
+      if (o.ad_valorem_rate !== null && o.ad_valorem_rate !== undefined) o.ad_valorem_rate = Number(o.ad_valorem_rate)
+      if (typeof o.origin_country === 'string') o.origin_country = o.origin_country.toUpperCase()
+      return o
+    })
+}
+
+/** USITC 공식 CSV export → base MFN 행 (종가세만) */
+function loadUsitc(file: string, effectiveFrom: string): Row[] {
+  const { data } = Papa.parse<Record<string, string>>(readFileSync(file, 'utf-8'), {
+    header: true,
+    skipEmptyLines: true,
+  })
+  const rows: Row[] = []
   let skipped = 0
-  for (const r of parsed.data) {
+  for (const r of data) {
     const hts = (r['HTS Number'] ?? r['hts_number'] ?? '').replace(/\D/g, '')
     if (hts.length !== 8 && hts.length !== 10) continue
-    const rateStr = (r['General Rate of Duty'] ?? r['general_rate_of_duty'] ?? '').trim()
-    if (!rateStr) continue
+    const s = (r['General Rate of Duty'] ?? r['general_rate_of_duty'] ?? '').trim()
+    if (!s) continue
     let rate: number | null = null
-    if (/^free$/i.test(rateStr)) rate = 0
+    if (/^free$/i.test(s)) rate = 0
     else {
-      const m = rateStr.match(/^(\d+(?:\.\d+)?)\s*%$/)
+      const m = s.match(/^(\d+(?:\.\d+)?)\s*%$/)
       if (m) rate = Number(m[1]) / 100
     }
     if (rate === null) {
@@ -78,60 +67,76 @@ function loadUsitcCsv(file: string, effectiveFrom: string): SeedRow[] {
       continue
     }
     rows.push({
+      program_code: 'mfn',
       hts_code: hts,
       origin_country: null,
       layer: 'base_mfn',
       ad_valorem_rate: rate,
       effective_from: effectiveFrom,
       effective_to: null,
-      source: `USITC export ${file.split('/').pop()}`,
+      source: `USITC export ${file.split(/[/\\]/).pop()}`,
       note: null,
     })
   }
-  if (skipped > 0) console.log(`Skipped ${skipped} non-ad-valorem rows (specific/compound rates — MVP supports ad valorem only)`)
+  if (skipped > 0) console.log(`  종가세가 아닌 ${skipped}행은 건너뜀 (종량세·복합세는 MVP 미지원)`)
   return rows
 }
 
 async function main() {
   const args = process.argv.slice(2)
-  const usitcIdx = args.indexOf('--usitc')
-  const rows =
-    usitcIdx >= 0 && args[usitcIdx + 1]
-      ? loadUsitcCsv(args[usitcIdx + 1], args[usitcIdx + 2] ?? '2025-01-01')
-      : loadBundledSeed()
+  const usitc = args.indexOf('--usitc')
 
-  console.log(`rate_ledger upsert: ${rows.length} rows`)
-  for (let i = 0; i < rows.length; i += 500) {
-    const chunk = rows.slice(i, i + 500)
-    const { error } = await supabase
-      .from('rate_ledger')
-      .upsert(chunk, { onConflict: 'hts_code,origin_country,layer,effective_from' })
-    if (error) {
-      console.error('rate_ledger upsert failed:', error.message)
-      process.exit(1)
-    }
-  }
-
-  // MPF·HMF 설정 (FY2025 — 매년 10/1 CBP 고시로 조정, 관리자 갱신 필요)
-  const { error: feeError } = await supabase.from('fee_settings').upsert(
-    [
-      {
-        mpf_rate: 0.003464,
-        mpf_min_usd: 32.71,
-        mpf_max_usd: 634.62,
-        hmf_rate: 0.00125,
-        effective_from: '2024-10-01',
-        note: 'FY2025 MPF min/max — verify annual adjustment every Oct 1',
-      },
-    ],
-    { onConflict: 'effective_from' },
+  // ── 1. duty_programs (upsert) ──────────────────────────────────
+  // 세율 행이 program_code FK 를 갖고 있어 프로그램이 먼저다.
+  const programs = parse(join(here, 'duty_programs.csv'))
+  const pBefore = await countRows('duty_programs')
+  await insertRows('duty_programs', programs, 'return=minimal,resolution=merge-duplicates')
+  const pAfter = await countRows('duty_programs')
+  console.log(
+    `  duty_programs: ${pAfter - pBefore}행 삽입 / ${programs.length - (pAfter - pBefore)}행 갱신 ` +
+      `(${pBefore} → ${pAfter}, DB 재조회 값)`,
   )
-  if (feeError) {
-    console.error('fee_settings upsert failed:', feeError.message)
-    process.exit(1)
-  }
+  if (pAfter === 0) throw new Error('duty_programs 가 여전히 0행이다 — 적재되지 않았다')
 
-  console.log('Seed complete. (Enter real Section 301 / IEEPA rates manually in rate_ledger — SAMPLE rows are placeholders.)')
+  // ── 2. rate_ledger ─────────────────────────────────────────────
+  const all =
+    usitc >= 0 && args[usitc + 1] ? loadUsitc(args[usitc + 1], args[usitc + 2] ?? '2025-01-01') : parse(join(here, 'hts_seed_50.csv'))
+
+  // **mfn 은 건드리지 않는다.** 진실 출처는 USITC 전량 적재(npm run hts:seed,
+  // 17,633행)이고 이 CSV 의 50행은 초기 테스트용 표본이다. 예전 판이 이걸
+  // 구분하지 않아, 지우고-다시-넣기가 USITC 17,583행을 날렸다 (실제로 겪었다).
+  // --usitc 모드는 USITC 파일이 곧 진실 출처이므로 예외다.
+  const rates = usitc >= 0 ? all : all.filter((r) => r.program_code !== 'mfn')
+  if (usitc < 0 && rates.length < all.length) {
+    console.log(`  mfn ${all.length - rates.length}행은 건너뜀 — USITC 적재(hts:seed)가 진실 출처다`)
+  }
+  const codes = [...new Set(rates.map((r) => String(r.program_code)))]
+  const filter = `program_code=in.(${codes.join(',')})`
+
+  // 멱등하게 만든다. `*_one_open` 인덱스가 (program_code, hts_code, origin_country)
+  // 당 열린 행을 하나로 강제하므로, 그냥 다시 넣으면 두 번째 실행이 23505 로 죽는다.
+  // 시드는 "이 CSV 가 그 프로그램들의 진실 출처" 라는 선언이므로 지우고 다시 넣는다.
+  await verifiedWrite(
+    'rate_ledger',
+    'rate_ledger',
+    async () => {
+      const res = await fetch(`${dbUrl()}/rest/v1/rate_ledger?${filter}`, {
+        method: 'DELETE',
+        headers: { apikey: serviceKey(), Authorization: `Bearer ${serviceKey()}` },
+      })
+      if (!res.ok) throw new Error(`기존 행 삭제 실패: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`)
+      await insertRows('rate_ledger', rates)
+    },
+    { filter, expectedDeltaAbsolute: rates.length },
+  )
+
+  console.log()
+  console.log('적재 완료 — 위 숫자는 요청 건수가 아니라 DB 에서 다시 읽은 값이다.')
+  console.log('fee_settings 는 마이그레이션이 관리한다 (여기서 건드리지 않는다).')
 }
 
-main()
+main().catch((e) => {
+  console.error()
+  console.error('✗ 시드 실패:', e instanceof Error ? e.message : String(e))
+  process.exit(1)
+})
