@@ -6,8 +6,8 @@ import type { CalcItem, CalcShipment, FeeSettings } from '../src/lib/calc/types'
 
 const FEES: FeeSettings = {
   mpf_rate: 0.003464,
-  mpf_min_usd: 32.71,
-  mpf_max_usd: 634.62,
+  mpf_min_usd: 33.58,
+  mpf_max_usd: 651.50,
   hmf_rate: 0.00125,
   effective_from: '2024-10-01',
 }
@@ -48,17 +48,18 @@ describe('MPF — 선적 단위 0.3464% + min·max 캡 (스펙 §4)', () => {
     expect(r.items[0].mpf_per_unit).toBeCloseTo(0.828762, 6)
   })
 
-  it('min 캡: 소액 선적은 최소 $32.71', () => {
-    // 총가액 1,000 → 3.464 → min 32.71
+  it('min 캡: 소액 선적은 최소 $33.58', () => {
+    // 총가액 1,000 → 3.464 → min 33.58
     const r = computeShipment(ship(), [item({ unit_cost_usd: 10, units_per_shipment: 100 })], [], FEES, CTX)
-    expect(r.totals.mpf_shipment).toBeCloseTo(32.71, 2)
-    expect(r.items[0].mpf_per_unit).toBeCloseTo(0.3271, 4)
+    expect(r.totals.mpf_shipment).toBeCloseTo(33.58, 2)
+    // 파생값도 함께 움직인다 — 33.58 / 100 units
+    expect(r.items[0].mpf_per_unit).toBeCloseTo(0.3358, 4)
   })
 
-  it('max 캡: 고액 선적은 최대 $634.62', () => {
-    // 총가액 500,000 → 1,732 → max 634.62
+  it('max 캡: 고액 선적은 최대 $651.50', () => {
+    // 총가액 500,000 → 1,732 → max 651.50
     const r = computeShipment(ship(), [item({ unit_cost_usd: 5000, units_per_shipment: 100 })], [], FEES, CTX)
-    expect(r.totals.mpf_shipment).toBeCloseTo(634.62, 2)
+    expect(r.totals.mpf_shipment).toBeCloseTo(651.50, 2)
   })
 
   it('MPF는 배부 기준과 무관하게 항상 가액 비중으로 배부', () => {
@@ -67,8 +68,8 @@ describe('MPF — 선적 단위 0.3464% + min·max 캡 (스펙 §4)', () => {
       item({ sku: 'B', unit_cost_usd: 10, units_per_shipment: 100, weight_kg_per_unit: 9 }), // 가액 1000 (25%)
     ]
     const r = computeShipment(ship({ allocation_basis: 'weight', freight_usd: 1000 }), items, [], FEES, CTX)
-    const mpf = r.totals.mpf_shipment // 4000×0.003464 → min 캡 32.71
-    expect(mpf).toBeCloseTo(32.71, 2)
+    const mpf = r.totals.mpf_shipment // 4000×0.003464 → min 캡 33.58
+    expect(mpf).toBeCloseTo(33.58, 2)
     expect(r.items[0].mpf_per_unit).toBeCloseTo((mpf * 0.75) / 100, 6)
     expect(r.items[1].mpf_per_unit).toBeCloseTo((mpf * 0.25) / 100, 6)
     // 반면 운임은 중량 비중(10% vs 90%)

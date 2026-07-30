@@ -57,7 +57,7 @@ const LEDGER: RateRow[] = [
   { program_code: '301-fl', hts_code: '*', origin_country: 'IN', layer: 'section301', ad_valorem_rate: 0.10, effective_from: '2026-07-24', effective_to: null },
 ]
 
-const FEES: FeeSettings = { mpf_rate: 0.003464, mpf_min_usd: 32.71, mpf_max_usd: 634.62, hmf_rate: 0.00125, effective_from: '2024-10-01' }
+const FEES: FeeSettings = { mpf_rate: 0.003464, mpf_min_usd: 33.58, mpf_max_usd: 651.50, hmf_rate: 0.00125, effective_from: '2025-10-01' }
 const SHIP: CalcShipment = {
   freight_usd: 2000, insurance_usd: 100, mode: 'ocean', allocation_basis: 'value',
   target_margin: 0.3, channel_fee_pct: 0.15, rate_as_of: AS_OF,

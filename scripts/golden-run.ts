@@ -344,10 +344,10 @@ const SHIP: CalcShipment = {
 }
 const FEES: FeeSettings = {
   mpf_rate: 0.003464,
-  mpf_min_usd: 32.71,
-  mpf_max_usd: 634.62,
+  mpf_min_usd: 33.58,
+  mpf_max_usd: 651.50,
   hmf_rate: 0.00125,
-  effective_from: '2024-10-01',
+  effective_from: '2025-10-01',
 }
 
 // ── 원장 로드 (seedRates.ts 는 vite ?raw 의존이라 node 에서 직접 파싱) ──

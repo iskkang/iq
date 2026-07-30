@@ -6,8 +6,8 @@ import type { CalcItem, CalcShipment, FeeSettings } from '../src/lib/calc/types'
 
 const FEES: FeeSettings = {
   mpf_rate: 0.003464,
-  mpf_min_usd: 32.71,
-  mpf_max_usd: 634.62,
+  mpf_min_usd: 33.58,
+  mpf_max_usd: 651.50,
   hmf_rate: 0.00125,
   effective_from: '2024-10-01',
 }
