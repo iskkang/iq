@@ -41,9 +41,6 @@ function markdownFiles(): string[] {
 const scripts = new Set(Object.keys(JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8')).scripts ?? {}))
 const tables = collectTables()
 
-// 문서에 자주 나오지만 DB 테이블이 아닌 것 — 오탐 방지
-const NOT_A_TABLE = new Set(['e.g', 'i.e', 'vs', 'etc'])
-
 for (const file of markdownFiles()) {
   const rel = relative(root, file).replace(/\\/g, '/')
   const text = readFileSync(file, 'utf-8')
