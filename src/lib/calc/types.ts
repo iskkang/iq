@@ -6,7 +6,7 @@
 export type TransportMode = 'ocean' | 'air'
 export type AllocationBasis = 'value' | 'weight'
 
-import type { AppliedProgram } from './programs'
+import type { AppliedProgram } from './programs.ts'
 
 /**
  * @deprecated `program_code` 를 쓸 것 (duty_programs 테이블).

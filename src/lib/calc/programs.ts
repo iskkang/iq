@@ -7,8 +7,8 @@
  * "지금 시행 중"의 근거가 못 된다. 발효일이 데이터에 있어야 하고,
  * 프로그램 추가·종료가 마이그레이션 없이 되어야 한다.
  */
-import type { RateRow } from './types'
-import { normalizeHts } from './rates'
+import type { RateRow } from './types.ts'
+import { normalizeHts } from './rates.ts'
 
 export type RateType = 'additive' | 'top_up_to_total'
 export type ScopeType = 'all' | 'country' | 'hts_list' | 'country_and_hts'
