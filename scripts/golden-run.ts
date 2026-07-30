@@ -1312,7 +1312,15 @@ async function main() {
   p()
   p('| 검증 | 결과 |')
   p('|---|---|')
-  const gatePassers = isReal ? modelStats.filter((m) => m.avg >= 7) : []
+  // 게이트 판정은 **3회 이상 실행의 최솟값**으로 한다.
+  //
+   // temperature 0 이어도 회차 간 편차가 있다 — 같은 코드로 7.0 과 8.0 이 나왔다.
+  // 평균으로 판정하면 운 좋은 회차가 나쁜 회차를 가린다. 최솟값을 쓰면 "어떤
+  // 회차에도 기준 아래로 안 떨어진다" 를 보증한다. 3회 미만이면 판정하지 않는다.
+  const GATE_MIN_RUNS = 3
+  const gatePassers = isReal
+    ? modelStats.filter((m) => m.scores.length >= GATE_MIN_RUNS && m.worst >= 7)
+    : []
   if (isReal) {
     for (const m of modelStats) {
       p(
