@@ -6,7 +6,9 @@ import { getRepo } from '../lib/repo'
 export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
   const repo = getRepo()
   const demo = repo.mode === 'demo'
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+  const [mode, setMode] = useState<'signin' | 'signup'>(() =>
+    new URLSearchParams(window.location.search).get('mode') === 'signup' ? 'signup' : 'signin',
+  )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
@@ -49,6 +51,11 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
           <p className="mb-1 text-sm font-medium text-slate-700">Landed cost, true margin & recommended price — per SKU</p>
           <p className="mb-4 text-xs leading-5 text-slate-500">Built by logistics operators around practical import workflows.</p>
 
+          <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs leading-5 text-emerald-900">
+            <p className="font-semibold">Working beta · Free during validation</p>
+            <p>Planned Starter price: $19/month after paid launch. No credit card and no automatic charge.</p>
+          </div>
+
           {demo ? (
             <>
               <p className="mb-4 rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
@@ -56,7 +63,7 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
               </p>
               <form onSubmit={submit} className="space-y-3">
                 <input type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-                <button disabled={busy} className="w-full rounded-md bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">Try it now</button>
+                <button disabled={busy} className="w-full rounded-md bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">Try the beta now</button>
               </form>
             </>
           ) : (
@@ -64,7 +71,7 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
               <div className="mb-4 flex rounded-md bg-slate-100 p-1 text-sm">
                 {(['signin', 'signup'] as const).map((m) => (
                   <button key={m} onClick={() => { setMode(m); if (m === 'signup') trackEvent('signup_tab_opened') }} className={`flex-1 rounded-md py-1.5 ${mode === m ? 'bg-white font-medium shadow-sm' : 'text-slate-500'}`}>
-                    {m === 'signin' ? 'Sign in' : 'Sign up'}
+                    {m === 'signin' ? 'Sign in' : 'Create free beta account'}
                   </button>
                 ))}
               </div>
@@ -72,9 +79,14 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
                 <input type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
                 <input type="password" required minLength={6} placeholder="Password (6+ characters)" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
                 <button disabled={busy} className="w-full rounded-md bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
-                  {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+                  {busy ? 'Working…' : mode === 'signin' ? 'Sign in' : 'Create free beta account'}
                 </button>
               </form>
+              {mode === 'signup' && (
+                <p className="mt-3 text-[11px] leading-5 text-slate-500">
+                  By creating an account, you agree to the Terms of Use and acknowledge that classifications and duty estimates require review.
+                </p>
+              )}
             </>
           )}
           {msg && <p className="mt-3 text-xs text-rose-600">{msg}</p>}
