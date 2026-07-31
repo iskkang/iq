@@ -10,16 +10,19 @@ const root = dirname(fileURLToPath(import.meta.url))
 /**
  * 멀티페이지 빌드.
  *
- *   /          index.html      랜딩 (정적, A/B 변형은 /a /b /c)
- *   /app       app/index.html  React SPA (가입·업로드·리포트)
- *   /privacy   privacy.html    개인정보 고지
- *   /sample-report.html            엔진이 생성한 샘플 리포트 (하단 이메일 폼)
- *   /hts       hts.html        공개 HTS 조회 (hts-lookup Edge Function 호출)
- *   /section-301  section-301.html  중국 301 리스트 안내 + 조회 (원산지 CN 고정)
+ *   /             index.html          랜딩 (정적, A/B 변형은 /a /b /c)
+ *   /app          app/index.html      React SPA (가입·업로드·리포트)
+ *   /privacy      privacy.html        개인정보 고지
+ *   /about        about.html          회사·제품 소개
+ *   /methodology  methodology.html    관세·랜디드 코스트 계산 방법론
+ *   /terms        terms.html          이용약관
+ *   /sample-report sample-report.html 엔진이 생성한 샘플 리포트
+ *   /hts          hts.html            공개 HTS 조회
+ *   /section-301  section-301.html    중국 301 리스트 조회
  *
- * 예전에는 index.html 이 SPA 하나뿐이라 landing.html·privacy.html 이 dist 에
- * 들어가지 않았고, vercel.json 이 모든 경로를 SPA 로 rewrite 해서 / 가 곧장
- * 로그인 화면으로 갔다. 세 페이지를 전부 빌드 입력으로 잡는다.
+ * 루트의 HTML 파일은 input 에 명시하지 않으면 Vite가 dist에 복사하지 않는다.
+ * 공개 링크가 존재하지만 실제 배포 파일이 없는 상태를 막기 위해 모든 공개 페이지를
+ * 여기서 명시적으로 빌드한다.
  */
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -29,6 +32,9 @@ export default defineConfig({
         landing: resolve(root, 'index.html'),
         app: resolve(root, 'app/index.html'),
         privacy: resolve(root, 'privacy.html'),
+        about: resolve(root, 'about.html'),
+        methodology: resolve(root, 'methodology.html'),
+        terms: resolve(root, 'terms.html'),
         sampleReport: resolve(root, 'sample-report.html'),
         hts: resolve(root, 'hts.html'),
         section301: resolve(root, 'section-301.html'),
