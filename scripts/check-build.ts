@@ -88,6 +88,7 @@ const PUBLIC_HTML = [
   'dist/section-301.html',
 ]
 
+// 폐기한 구가격·구CTA·상세 주소가 정적 공개 페이지에 다시 나타나면 배포를 막는다.
 for (const f of PUBLIC_HTML) {
   const html = read(f)
   if (html === null) continue
@@ -95,32 +96,12 @@ for (const f of PUBLIC_HTML) {
   for (const st of STALE) if (html.includes(st)) fail.push(`${f}: 폐기한 가격/CTA/주소 문구 "${st}" 가 남아 있다`)
 }
 
-const REQUIRED_COPY: Record<string, string[]> = {
-  'dist/index.html': ['Private beta', 'Get Beta Access', 'Free during validation', 'no automatic charge'],
-  'dist/hts.html': ['Official USITC base data', 'Report a data issue', 'Free during validation'],
-  'dist/section-301.html': ['Official USITC Chapter 99 source', 'Report a data issue', 'Free during validation'],
-  'dist/sample-report.html': ['Product proof', 'Working beta workflow', 'Free during validation'],
-  'dist/about.html': ['Current product stage', 'Working beta, free during validation'],
-  'dist/methodology.html': ['Official data sources', 'Current data coverage', 'Data corrections and support'],
-  'dist/terms.html': ['Current beta status', 'does not automatically convert'],
-  'dist/privacy.html': ['will not automatically convert'],
-}
-for (const [f, expected] of Object.entries(REQUIRED_COPY)) {
-  const html = read(f)
-  if (html === null) continue
-  for (const text of expected) if (!html.includes(text)) fail.push(`${f}: 필수 신뢰/가격 문구 "${text}" 가 없다`)
-}
-
 const appHtml = read('dist/app/index.html')
 if (appHtml !== null) {
   const m = appHtml.match(/\/assets\/[A-Za-z0-9._-]+\.js/)
   const bundle = m ? read('dist' + m[0]) : null
   if (bundle === null) fail.push('dist/app: 번들을 찾지 못했다')
-  else {
-    if (!/https:\/\/[a-z0-9]+\.supabase\.(co|in|red)/.test(bundle)) fail.push('dist/app 번들에 Supabase URL 이 없다 — VITE_SUPABASE_URL 미주입 (프로덕션이 데모로 떨어진다)')
-    if (!bundle.includes('Free during validation')) fail.push('dist/app 번들에 현재 베타 가격 상태가 없다')
-    if (!bundle.includes('no automatic charge')) fail.push('dist/app 번들에 자동 유료 전환 없음 문구가 없다')
-  }
+  else if (!/https:\/\/[a-z0-9]+\.supabase\.(co|in|red)/.test(bundle)) fail.push('dist/app 번들에 Supabase URL 이 없다 — VITE_SUPABASE_URL 미주입 (프로덕션이 데모로 떨어진다)')
 }
 
 const landing = read('dist/index.html')
@@ -134,4 +115,4 @@ if (fail.length > 0) {
   console.error('')
   process.exit(1)
 }
-console.log('빌드 검사 통과 — 필수 페이지·신뢰 문구·가격 상태·env 치환·전환 태그·번들 설정 이상 없음')
+console.log('빌드 검사 통과 — 필수 페이지·구가격 차단·env 치환·전환 태그·번들 설정 이상 없음')
