@@ -13,9 +13,25 @@ function read(rel: string): string | null {
   return existsSync(p) ? readFileSync(p, 'utf-8') : null
 }
 
-for (const f of ['dist/index.html', 'dist/privacy.html', 'dist/app/index.html', 'dist/sample-report.html', 'dist/hts.html', 'dist/section-301.html']) {
+const HTML_FILES = [
+  'dist/index.html',
+  'dist/privacy.html',
+  'dist/about.html',
+  'dist/methodology.html',
+  'dist/terms.html',
+  'dist/app/index.html',
+  'dist/sample-report.html',
+  'dist/hts.html',
+  'dist/section-301.html',
+]
+
+// 공개 링크가 있는데 빌드 입력에서 빠지는 회귀를 즉시 실패시킨다.
+for (const f of HTML_FILES) {
   const html = read(f)
-  if (html === null) continue
+  if (html === null) {
+    fail.push(`${f}: 필수 빌드 산출물이 없다 — vite.config.ts input 확인`)
+    continue
+  }
   const leftover = [...html.matchAll(/%VITE_[A-Z0-9_]+%/g)].map((m) => m[0])
   if (leftover.length > 0) fail.push(`${f}: Vite env 치환 누락 — ${[...new Set(leftover)].join(', ')}`)
 }
@@ -24,7 +40,7 @@ const ADS_ID = 'AW-18359222502'
 const ADS_LOADER = /googletagmanager\.com\/gtag\/js\?id=AW-18359222502/g
 const ADS_CONFIG = new RegExp(`gtag\\(\\s*['"]config['"]\\s*,\\s*['"]${ADS_ID}['"]\\s*\\)`)
 
-for (const f of ['dist/index.html', 'dist/privacy.html', 'dist/app/index.html', 'dist/sample-report.html', 'dist/hts.html', 'dist/section-301.html']) {
+for (const f of HTML_FILES) {
   const html = read(f)
   if (html === null) continue
   const n = [...html.matchAll(ADS_LOADER)].length
@@ -50,7 +66,16 @@ for (const f of ['dist/index.html', 'dist/sample-report.html', 'dist/hts.html', 
 
 const PLACEHOLDERS = ['YOUR_FORMSPREE_ID', 'YOUR_DOMAIN.com', 'YOUR_PROJECT', '<project-ref>', '[서울 주소']
 const STALE = ['iq-rose.vercel.app', 'metalogislab@gmail.com']
-for (const f of ['dist/index.html', 'dist/privacy.html', 'dist/sample-report.html', 'dist/hts.html', 'dist/section-301.html']) {
+for (const f of [
+  'dist/index.html',
+  'dist/privacy.html',
+  'dist/about.html',
+  'dist/methodology.html',
+  'dist/terms.html',
+  'dist/sample-report.html',
+  'dist/hts.html',
+  'dist/section-301.html',
+]) {
   const html = read(f)
   if (html === null) continue
   for (const ph of PLACEHOLDERS) if (html.includes(ph)) fail.push(`${f}: 치환되지 않은 플레이스홀더 "${ph}"`)
@@ -76,4 +101,4 @@ if (fail.length > 0) {
   console.error('')
   process.exit(1)
 }
-console.log('빌드 검사 통과 — env 치환·플레이스홀더·번들 설정 이상 없음')
+console.log('빌드 검사 통과 — 필수 페이지·env 치환·플레이스홀더·번들 설정 이상 없음')
