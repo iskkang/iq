@@ -10,6 +10,12 @@
     gtag('config', 'AW-18359222502')
     gtag('config', 'G-5H23Y883ZW')
   </script>
+  <!--
+    The paid conversion happens here, not on the marketing pages, so this is the
+    only place window.trackConversion() can fire for a subscription. Without it a
+    $29 signup is invisible to Google Ads and bidding keeps optimising for emails.
+  -->
+  <script src="/ads.js" defer></script>
 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

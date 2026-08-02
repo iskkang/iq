@@ -1,3 +1,4 @@
+import type { Subscription } from '../billing/plan'
 import type { AllocationBasis, FeeSettings, RateRow, TransportMode } from '../calc/types'
 import type { DutyProgram, ProgramExclusion } from '../calc/programs'
 import type { ClassifyBatchResult, ClassifyConsensus, HtsCandidate } from '../classify/types'
@@ -112,6 +113,18 @@ export interface Repo {
    * 이미 있으면 아무것도 하지 않는다. 생성했으면 그 선적을 돌려준다.
    */
   ensureSampleShipment(): Promise<Shipment | null>
+  /**
+   * 이 워크스페이스의 구독. 없으면 null.
+   *
+   * 화면은 이 값으로 안내를 바꾸지만 **한도를 강제하지는 않는다** — 강제는
+   * DB 트리거가 한다 (20260802150000_subscriptions.sql). anon key 는 브라우저에
+   * 그대로 나가 있어서 화면 판정만으로는 아무것도 못 막는다.
+   */
+  getSubscription(): Promise<Subscription | null>
+
+  /** Stripe Checkout 세션을 열고 결제 페이지 URL 을 돌려준다 */
+  startCheckout(): Promise<string>
+
   getRates(): Promise<RateRow[]>
   /** 관세 프로그램 (발효일·적용범위·가산방식) */
   getPrograms(): Promise<DutyProgram[]>

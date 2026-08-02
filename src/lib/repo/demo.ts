@@ -2,6 +2,7 @@
  * DEMO 모드 저장소 — Supabase env 없이 전체 플로우 시연용. 인메모리(새로고침 시 초기화).
  * 분류는 mock, rate 원장은 동봉 시드 사용.
  */
+import type { Subscription } from '../billing/plan'
 import type { FeeSettings, RateRow } from '../calc/types'
 import type { DutyProgram, ProgramExclusion } from '../calc/programs'
 import { resolveStatus } from '../classify/status'
@@ -136,6 +137,17 @@ export function createDemoRepo(): Repo {
       shipments.set(s.id, s)
       await this.addItems(s.id, SAMPLE_ITEMS)
       return s
+    },
+
+    // 데모는 인메모리라 결제할 대상이 없다. 늘 무료로 보이고, 결제 시도는
+    // 조용히 성공한 척하지 않고 분명히 거절한다 — 데모에서 "결제됐다" 로
+    // 보이면 실제 배포에서 결제가 죽어도 아무도 눈치채지 못한다.
+    async getSubscription(): Promise<Subscription | null> {
+      return null
+    },
+
+    async startCheckout(): Promise<string> {
+      throw new Error('Checkout is unavailable in demo mode — configure VITE_SUPABASE_URL to take payments.')
     },
 
     async getRates(): Promise<RateRow[]> {

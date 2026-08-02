@@ -4,6 +4,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { PLAN } from '../src/lib/billing/plan'
 import { DISCLAIMER_EN } from '../src/lib/disclaimer'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -73,9 +74,17 @@ const STALE = [
   'Get early access',
   'Join $19 Beta List',
   '$19 Beta',
-  '$29/mo',
+  // $29/mo 는 여기 있었다. 3단 요금제($29/$79/$149)를 걷어내며 함께 막았는데,
+  // 이번에 **의도적으로** 되살렸다 — 지금은 유일한 유료 요금제다.
+  // 나머지 두 단은 돌아오지 않으므로 그대로 둔다.
   '$79/mo',
   '$149/mo',
+  // 유료 요금제가 생기기 전의 약속들. 사이트가 "$19/month 예정" 과
+  // "free during validation" 을 네 페이지에서 말하고 있었는데, 실제로 $29 를
+  // 받기 시작하면 그 문장들은 전부 거짓이 된다. 되살아나면 막는다.
+  '$19/month',
+  'Free during validation',
+  'free during validation',
   "We'll email you when your workspace is ready",
 ]
 const PUBLIC_HTML = [
@@ -182,7 +191,37 @@ if (appHtml !== null) {
   const m = appHtml.match(/\/assets\/[A-Za-z0-9._-]+\.js/)
   const bundle = m ? read('dist' + m[0]) : null
   if (bundle === null) fail.push('dist/app: 번들을 찾지 못했다')
-  else if (!/https:\/\/[a-z0-9]+\.supabase\.(co|in|red)/.test(bundle)) fail.push('dist/app 번들에 Supabase URL 이 없다 — VITE_SUPABASE_URL 미주입 (프로덕션이 데모로 떨어진다)')
+  else {
+    if (!/https:\/\/[a-z0-9]+\.supabase\.(co|in|red)/.test(bundle)) fail.push('dist/app 번들에 Supabase URL 이 없다 — VITE_SUPABASE_URL 미주입 (프로덕션이 데모로 떨어진다)')
+
+    // 유료 전환은 정적 페이지가 아니라 **이 번들 안에서** 일어난다. 다른 퍼널
+    // 페이지와 같은 이유로 계측이 빠지면 조용히 실패한다 — 결제는 되는데
+    // 어디서 몇 명이 이탈했는지 영원히 알 수 없다.
+    for (const e of ['checkout_started', 'checkout_failed', 'subscription_started', 'plan_limit_hit']) {
+      if (!bundle.includes(e)) fail.push(`dist/app 번들에 퍼널 이벤트 ${e} 가 없다`)
+    }
+  }
+}
+
+// 유료 전환은 앱에서 일어나므로 Google Ads 태그가 앱에도 있어야 한다.
+// 없으면 $29 결제가 Ads 에는 보이지 않고 입찰이 계속 이메일에 최적화된다.
+const appIndex = read('dist/app/index.html')
+if (appIndex !== null && !appIndex.includes('/ads.js')) {
+  fail.push('dist/app/index.html: /ads.js 를 불러오지 않는다 — 유료 전환이 Google Ads 에 기록되지 않는다')
+}
+
+/**
+ * ── 가격은 한 곳에서만 온다 ───────────────────────────────────────
+ * 화면의 가격이 결제 금액과 다르면 그건 오타가 아니라 사기로 읽힌다. 값은
+ * src/lib/billing/plan.ts 에 있고, 랜딩이 그 값을 실었는지 여기서 확인한다.
+ * (실제 청구액은 Stripe 의 Price 객체가 정하므로 그 대조는 docs/pricing-29.md
+ * 의 배포 절차가 맡는다 — 코드가 확인할 수 있는 범위는 여기까지다.)
+ */
+for (const f of ['dist/index.html']) {
+  const html = read(f)
+  if (html !== null && !html.includes(PLAN.label)) {
+    fail.push(`${f}: 가격 표기 ${PLAN.label} 가 없다 — 유료 요금제가 있는데 화면이 말하지 않는다`)
+  }
 }
 
 const landing = read('dist/index.html')
