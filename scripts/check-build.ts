@@ -173,6 +173,8 @@ if (existsSync(join(root, 'dist/blog.html'))) {
       ['id="cform"', '댓글 폼이 없다 — 답글을 보려고 만든 글이다'],
       ['rel="canonical"', 'canonical 이 없다'],
       ['/analytics.js', '퍼널 계측을 불러오지 않는다'],
+      ['<figure class="fig"', '본문 그림이 없다 — 표만으로는 코드별 격차가 훑어야 보인다'],
+      ['role="img"', '그림에 접근성 라벨이 없다'],
     ] as const) {
       if (!html.includes(needle)) fail.push(`dist/blog/${f}: ${why}`)
     }

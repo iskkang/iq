@@ -178,7 +178,7 @@ function factsFor(codes: string[], lists: ListFile['lists']) {
   })
 }
 
-const CSS = `*{box-sizing:border-box}body{margin:0;font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#e2e8f0;background:#020617}a{color:#a5b4fc}.nav{border-bottom:1px solid #1e293b}.navin,.wrap,.foot-in{max-width:760px;margin:auto;padding:0 20px}.navin{min-height:68px;display:flex;justify-content:space-between;align-items:center}.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:700;color:#fff}.mark{background:#6366f1;padding:5px 9px;border-radius:8px}.links{display:flex;gap:16px;font-size:14px}.links a{color:#cbd5e1;text-decoration:none}.wrap{padding-top:48px;padding-bottom:64px}.eyebrow{color:#a5b4fc;text-transform:uppercase;letter-spacing:.12em;font-size:11px;font-weight:800;margin:0}h1{font-size:38px;line-height:1.15;margin:12px 0 10px;color:#fff}.dek{color:#94a3b8;font-size:18px;margin:0 0 8px}.meta{color:#64748b;font-size:13px}h2{font-size:24px;margin:38px 0 12px;color:#fff}h3{font-size:19px;margin:28px 0 10px;color:#fff}p{margin:0 0 16px}ul{padding-left:20px}li{margin:6px 0}blockquote{margin:20px 0;padding:12px 18px;border-left:3px solid #6366f1;background:#0f172a;border-radius:0 10px 10px 0}blockquote p{margin:0}code{background:#0f172a;border:1px solid #1e293b;border-radius:5px;padding:1px 5px;font-size:14px}hr{border:0;border-top:1px solid #1e293b;margin:32px 0}.card{border:1px solid #273449;background:#0f172a;border-radius:14px;padding:20px;margin:26px 0}.card h2{margin-top:0}.ledger{width:100%;border-collapse:collapse;font-size:14px}.ledger th{text-align:left;color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:1px solid #1e293b}.ledger td{padding:9px 10px;border-top:1px solid #1e293b;vertical-align:top}.ledger a{font-weight:700;text-decoration:none}.chip{display:inline-block;margin:1px 4px 1px 0;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;background:#422006;color:#fde68a}.chip.ended{background:#1e293b;color:#94a3b8}.badge{display:inline-block;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}.badge.fact{background:rgba(99,102,241,.15);color:#c7d2fe}.badge.opinion{background:rgba(251,191,36,.14);color:#fcd34d}.take{border-color:#78350f;background:rgba(251,191,36,.05)}.ask{border-color:#312e81;background:rgba(99,102,241,.06)}.ask h2{margin-bottom:6px}form.c{display:grid;gap:10px;margin-top:14px}form.c input,form.c textarea{width:100%;padding:11px 12px;border:1px solid #334155;border-radius:10px;background:#020617;color:#e2e8f0;font:inherit}form.c textarea{min-height:110px;resize:vertical}form.c button{justify-self:start;border:0;border-radius:10px;background:#6366f1;color:#fff;font-weight:700;padding:11px 20px;cursor:pointer}form.c button:disabled{opacity:.6;cursor:wait}.hp{position:absolute;left:-9999px}.cmt{border-top:1px solid #1e293b;padding:14px 0}.cmt b{color:#fff}.cmt time{color:#64748b;font-size:12px;margin-left:8px}.cmt p{margin:6px 0 0;white-space:pre-wrap}.note{color:#64748b;font-size:12px}.err{color:#fecaca;font-size:13px}.srcs{font-size:13px;color:#94a3b8}.srcs li{margin:4px 0}.postlist{list-style:none;padding:0}.postlist li{border-top:1px solid #1e293b;padding:20px 0}.postlist h2{margin:0 0 6px;font-size:21px}.postlist a{text-decoration:none}.foot{border-top:1px solid #1e293b;color:#64748b;font-size:12px}.foot-in{padding-top:28px;padding-bottom:36px}`
+const CSS = `*{box-sizing:border-box}body{margin:0;font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#e2e8f0;background:#020617}a{color:#a5b4fc}.nav{border-bottom:1px solid #1e293b}.navin,.wrap,.foot-in{max-width:760px;margin:auto;padding:0 20px}.navin{min-height:68px;display:flex;justify-content:space-between;align-items:center}.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:700;color:#fff}.mark{background:#6366f1;padding:5px 9px;border-radius:8px}.links{display:flex;gap:16px;font-size:14px}.links a{color:#cbd5e1;text-decoration:none}.wrap{padding-top:48px;padding-bottom:64px}.eyebrow{color:#a5b4fc;text-transform:uppercase;letter-spacing:.12em;font-size:11px;font-weight:800;margin:0}h1{font-size:38px;line-height:1.15;margin:12px 0 10px;color:#fff}.dek{color:#94a3b8;font-size:18px;margin:0 0 8px}.meta{color:#64748b;font-size:13px}h2{font-size:24px;margin:38px 0 12px;color:#fff}h3{font-size:19px;margin:28px 0 10px;color:#fff}p{margin:0 0 16px}ul{padding-left:20px}li{margin:6px 0}blockquote{margin:20px 0;padding:12px 18px;border-left:3px solid #6366f1;background:#0f172a;border-radius:0 10px 10px 0}blockquote p{margin:0}code{background:#0f172a;border:1px solid #1e293b;border-radius:5px;padding:1px 5px;font-size:14px}hr{border:0;border-top:1px solid #1e293b;margin:32px 0}.card{border:1px solid #273449;background:#0f172a;border-radius:14px;padding:20px;margin:26px 0}.card h2{margin-top:0}.ledger{width:100%;border-collapse:collapse;font-size:14px}.ledger th{text-align:left;color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;border-bottom:1px solid #1e293b}.ledger td{padding:9px 10px;border-top:1px solid #1e293b;vertical-align:top}.ledger a{font-weight:700;text-decoration:none}.chip{display:inline-block;margin:1px 4px 1px 0;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;background:#422006;color:#fde68a}.chip.ended{background:#1e293b;color:#94a3b8}.badge{display:inline-block;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}.badge.fact{background:rgba(99,102,241,.15);color:#c7d2fe}.badge.opinion{background:rgba(251,191,36,.14);color:#fcd34d}.take{border-color:#78350f;background:rgba(251,191,36,.05)}.ask{border-color:#312e81;background:rgba(99,102,241,.06)}.ask h2{margin-bottom:6px}form.c{display:grid;gap:10px;margin-top:14px}form.c input,form.c textarea{width:100%;padding:11px 12px;border:1px solid #334155;border-radius:10px;background:#020617;color:#e2e8f0;font:inherit}form.c textarea{min-height:110px;resize:vertical}form.c button{justify-self:start;border:0;border-radius:10px;background:#6366f1;color:#fff;font-weight:700;padding:11px 20px;cursor:pointer}form.c button:disabled{opacity:.6;cursor:wait}.hp{position:absolute;left:-9999px}.cmt{border-top:1px solid #1e293b;padding:14px 0}.cmt b{color:#fff}.cmt time{color:#64748b;font-size:12px;margin-left:8px}.cmt p{margin:6px 0 0;white-space:pre-wrap}.fig{margin:28px 0;padding:18px 18px 14px;border:1px solid #273449;border-radius:14px;background:#0f172a;overflow-x:auto}.fig svg{display:block;min-width:520px}.fig figcaption{margin-top:10px;line-height:1.55}.note{color:#64748b;font-size:12px}.err{color:#fecaca;font-size:13px}.srcs{font-size:13px;color:#94a3b8}.srcs li{margin:4px 0}.postlist{list-style:none;padding:0}.postlist li{border-top:1px solid #1e293b;padding:20px 0}.postlist h2{margin:0 0 6px;font-size:21px}.postlist a{text-decoration:none}.foot{border-top:1px solid #1e293b;color:#64748b;font-size:12px}.foot-in{padding-top:28px;padding-bottom:36px}`
 
 const HEAD = (title: string, desc: string, canonical: string) => `<!doctype html>
 <html lang="en">
@@ -202,6 +202,79 @@ const HEAD = (title: string, desc: string, canonical: string) => `<!doctype html
 const FOOT = `  <footer class="foot"><div class="foot-in">LandedIQ is operated by MTL Co., Ltd. · support@landediq.app<br />Estimates are not customs, legal or tax advice. Final classification and duty liability remain with the importer of record. · © 2026 LandedIQ</div></footer>
 </body></html>
 `
+
+/**
+ * 글 중간에 들어가는 그림 — 인라인 SVG 막대.
+ *
+ * ── 왜 스톡 사진이 아닌가 ────────────────────────────────────────
+ * 컨테이너·항구 사진은 이 글에 아무것도 더하지 않는다. 글마다 같은 것을 쓰게
+ * 되고, 라이선스와 용량만 따라온다. 무엇보다 **읽는 사람이 이미 아는 것**을
+ * 보여준다.
+ *
+ * 대신 같은 데이터에서 유도한 그림을 넣는다. 손으로 못 쓰는 값이고, 글마다
+ * 다르고, 표에서는 훑어야 보이는 것(코드마다 세율이 갈린다)이 한눈에 보인다.
+ * 외부 파일이 없어 CSP·캐시·깨진 이미지 문제도 없다.
+ *
+ * ── 색 ──────────────────────────────────────────────────────────
+ * 길이가 크기를, 색이 소속(어느 리스트 층)을 나타낸다. 두 칸을 고정 순서로
+ * 쓰고 절대 돌려쓰지 않는다. 어두운 카드면(#0f172a)에 대해 검증기를 돌려
+ * 여섯 검사를 통과한 조합이다 (CVD ΔE 32.2 · 정상시야 35.1 · 대비 3:1↑).
+ * 글자는 언제나 텍스트 색을 입는다 — 계열 색을 글자에 쓰지 않는다.
+ */
+const TIER_HI = '#d97706' // 25% 층 (List 1·2·3)
+const TIER_LO = '#6366f1' // 7.5% 층 (List 4A)
+
+function rateChart(facts: ReturnType<typeof factsFor>): string {
+  const rows = facts
+    .map((f) => ({
+      code: f.code,
+      rate: f.active.reduce((s, a) => s + a.rate, 0),
+      label: f.active.map((a) => a.list.toUpperCase()).join(' + ') || 'no active list',
+    }))
+    // 세율 내림차순, 동률이면 코드순 — 같은 입력이면 같은 그림이어야 한다
+    .sort((a, b) => (b.rate !== a.rate ? b.rate - a.rate : a.code.localeCompare(b.code)))
+
+  const max = Math.max(...rows.map((r) => r.rate), 0.075)
+  const W = 700
+  const ROW = 30
+  const BAR = 13
+  const X0 = 118
+  const X1 = W - 78
+  const H = rows.length * ROW + 54
+
+  const bar = (x0: number, y: number, w: number, fill: string) => {
+    const r = Math.min(4, w)
+    if (w < 1) return ''
+    return `<path d="M${x0} ${y}H${x0 + w - r}a${r} ${r} 0 0 1 ${r} ${r}V${y + BAR - r}a${r} ${r} 0 0 1 ${-r} ${r}H${x0}Z" fill="${fill}" />`
+  }
+
+  const body = rows
+    .map((r, i) => {
+      const y = 44 + i * ROW
+      const w = Math.round(((X1 - X0) * r.rate) / (max * 1.08))
+      const fill = r.rate >= 0.2 ? TIER_HI : TIER_LO
+      const val = r.rate === 0 ? '—' : `+${pct(r.rate)}`
+      return `<g><title>${esc(dotted(r.code))} · ${esc(r.label)} · ${esc(val)}</title>
+      <text x="${X0 - 12}" y="${y + BAR - 2}" text-anchor="end" class="c">${esc(dotted(r.code))}</text>
+      ${bar(X0, y, w, fill)}
+      <text x="${X0 + w + 9}" y="${y + BAR - 2}" class="v">${esc(val)}</text></g>`
+    })
+    .join('')
+
+  const legend = `<g class="lg">
+    <rect x="${X0}" y="14" width="9" height="9" rx="2" fill="${TIER_HI}" /><text x="${X0 + 15}" y="22">Lists 1–3 · +25%</text>
+    <rect x="${X0 + 132}" y="14" width="9" height="9" rx="2" fill="${TIER_LO}" /><text x="${X0 + 147}" y="22">List 4A · +7.5%</text></g>`
+
+  return `<figure class="fig">
+    <svg viewBox="0 0 ${W} ${H}" role="img" width="100%" aria-labelledby="cht-t cht-d">
+      <title id="cht-t">Section 301 rate by HTS code</title>
+      <desc id="cht-d">Horizontal bars, one per code in this post, sorted by Section 301 rate. Every value is also printed beside its bar, and the same numbers appear in the table above.</desc>
+      <style>text{font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#94a3b8}.c{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;fill:#cbd5e1}.v{font-variant-numeric:tabular-nums;font-weight:700;fill:#e2e8f0}.lg text{font-size:11.5px;fill:#94a3b8}</style>
+      ${legend}${body}
+    </svg>
+    <figcaption class="note">Section 301 layer only, by code — the same figures as the table above, drawn from the official HTSUS Chapter 99 snapshot. Base MFN is not included here; open any code for its full stack.</figcaption>
+  </figure>`
+}
 
 function ledgerTable(facts: ReturnType<typeof factsFor>, fetchedAt: string): string {
   const rows = facts
@@ -242,10 +315,33 @@ const COMMENT_JS = `<script>
   load();
 </script>`
 
+/**
+ * 본문 중간에 그림을 끼운다.
+ *
+ * 위치를 글쓴이에게 맡기지 않는다 — 마크다운에 자리표시자를 두면 그것도 문법이
+ * 되고, 빠뜨린 글은 그림 없이 나간다. 대신 중간에서 가장 가까운 소제목 앞에
+ * 넣는다. 문단을 자르지 않고, 읽는 흐름이 한 번 끊기는 자리가 원래 거기다.
+ * 소제목이 없으면 블록 수의 절반 지점에 넣는다.
+ */
+function insertFigure(bodyHtml: string, figure: string): string {
+  const blocks = bodyHtml.split('\n')
+  if (blocks.length < 3) return `${bodyHtml}\n${figure}`
+  const mid = Math.floor(blocks.length / 2)
+  let at = -1
+  for (let d = 0; d < blocks.length; d++) {
+    for (const i of [mid - d, mid + d]) {
+      if (at === -1 && i > 0 && i < blocks.length && blocks[i].startsWith('<h2')) at = i
+    }
+    if (at !== -1) break
+  }
+  const pos = at === -1 ? mid : at
+  return [...blocks.slice(0, pos), figure, ...blocks.slice(pos)].join('\n')
+}
+
 function renderPost(p: Post, lists: ListFile): string {
   const canonical = `${ORIGIN}/blog/${p.slug}`
   const facts = factsFor(p.codes, lists.lists)
-  const body = renderMarkdown(p.body, p.bodyOffset)
+  const body = insertFigure(renderMarkdown(p.body, p.bodyOffset), rateChart(facts))
   const sources = p.sources
     .map((s) => `<li><a href="${esc(s.url)}" rel="nofollow noopener" target="_blank">${esc(s.label)}</a></li>`)
     .join('')
