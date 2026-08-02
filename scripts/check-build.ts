@@ -149,6 +149,34 @@ for (const name of ['terminal', 'operations', 'layers', 'seal']) {
   }
 }
 
+/**
+ * ── 팀 섹션은 채워지기 전에 켜질 수 없다 ──────────────────────────
+ * /about 의 팀 섹션은 실명·실사진이 준비되기 전까지 `hidden` 이라 화면에
+ * 나가지 않는다. 자리표시자(PERSON_1_NAME …)를 그대로 둔 채 hidden 만 지우면
+ * 지어낸 사람이 실재하는 팀처럼 발행된다.
+ *
+ * 이 사이트는 미국 수입업자가 관세 계산을 믿을지 결정하는 곳이다. 거기서
+ * 가짜 팀은 "디자인 자리표시자" 가 아니라 실제 피해다. 그리고 이 실패는
+ * 조용하다 — 페이지는 멀쩡히 렌더되고 아무도 안 막는다. 여기서 막는다.
+ *
+ * 채우면 자동으로 통과한다. 자리표시자가 없으면 이 검사는 아무 말도 안 한다.
+ */
+const aboutHtml = read('dist/about.html')
+if (aboutHtml !== null) {
+  const team = aboutHtml.match(/<section[^>]*id="team"[^>]*>[\s\S]*?<\/section>/)
+  if (team) {
+    const openTag = team[0].slice(0, team[0].indexOf('>') + 1)
+    const hidden = /\shidden(?=[\s>=])/.test(openTag)
+    const placeholders = [...team[0].matchAll(/PERSON_\d+_(?:NAME|ROLE|BIO)/g)].map((m) => m[0])
+    if (!hidden && placeholders.length > 0) {
+      fail.push(
+        `dist/about.html: 팀 섹션이 자리표시자를 채우지 않은 채 공개된다 — ${[...new Set(placeholders)].join(', ')}. ` +
+          '실명·실사진을 넣거나 section 에 hidden 을 되돌릴 것.',
+      )
+    }
+  }
+}
+
 const appHtml = read('dist/app/index.html')
 if (appHtml !== null) {
   const m = appHtml.match(/\/assets\/[A-Za-z0-9._-]+\.js/)
