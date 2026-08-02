@@ -57,6 +57,28 @@ RLS `with check` 를 안 쓴 이유가 있다 — 거기 들어간 `count(*)` �
 
 ## 사람이 해야 할 일
 
+### 0. 스크립트로 1~2단계를 한 번에
+
+대시보드에서 손으로 해도 되지만, 두 군데가 조용히 틀리기 쉽다 — Price ID 대신
+Product ID 를 복사하거나, 웹훅 이벤트를 하나 빠뜨리는 것. 둘 다 "설정은 다 한
+것 같은데 안 되는" 증상이라 원인을 찾기 어렵다.
+
+```bash
+STRIPE_SECRET_KEY=sk_test_... npm run stripe:setup
+```
+
+Product · Price · 웹훅 엔드포인트를 만들고, 그대로 붙여 넣을
+`supabase secrets set` 명령을 출력한다. 두 번 돌려도 중복이 생기지 않는다
+(이미 있으면 그것을 쓴다). 금액은 `src/lib/billing/plan.ts` 에서 읽으므로
+스크립트에 가격이 따로 적혀 있지 않다.
+
+**테스트 키로 먼저 돌린다.** 확인되면 라이브 키로 다시 돌린다.
+
+웹훅 서명 시크릿은 Stripe 가 **생성 시점에만** 보여준다. 이미 만들어 둔
+엔드포인트가 있는데 시크릿을 모르면 `-- --recreate-webhook` 으로 새로 만든다.
+
+아래 1~2단계는 이 스크립트가 하는 일을 손으로 할 때의 절차다.
+
 ### 1. Stripe 상품과 가격
 
 Stripe 대시보드 → Product catalog → **Add product**
@@ -77,7 +99,8 @@ Stripe 대시보드 → Developers → Webhooks → **Add endpoint**
 URL      https://hwcfjxwdmmlydnrfyjqk.supabase.co/functions/v1/stripe-webhook
 ```
 
-보낼 이벤트 (이 다섯 개만):
+보낼 이벤트 (이 여섯 개만). `supabase/functions/stripe-webhook/index.ts` 의
+switch 문과 같은 목록이어야 한다 — 여기 없는 이벤트는 영영 안 온다:
 
 ```
 checkout.session.completed
@@ -85,6 +108,7 @@ customer.subscription.created
 customer.subscription.updated
 customer.subscription.deleted
 customer.subscription.paused
+customer.subscription.resumed
 ```
 
 만들면 **Signing secret** (`whsec_...`) 이 나온다. 이게 이 엔드포인트의 유일한
