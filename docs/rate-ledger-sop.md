@@ -190,12 +190,34 @@ confirmed 가 8자리 광범위 매칭이고 unverified 가 10자리 정밀 매�
 
 ### 월요일 — 변경 감시 (45분)
 
+0. **원장 드리프트 대조부터 한다** (1분)
+
+   ```sh
+   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… npm run ledger:verify
+   ```
+
+   커밋된 `data/ledger.manifest.json` 과 DB 를 대조한다. **밖에서 무슨 일이
+   있었는지를 먼저 확인하고 이번 주 감시를 시작하는 것**이 순서다 — 지난주에
+   누가 SQL Editor 로 건드렸다면 그 위에 변경을 얹기 전에 알아야 한다.
+
+   드리프트가 뜨면 §3 을 보고 원인을 규명한 뒤, 의도한 변경이었으면
+   `npm run ledger:manifest` 로 갱신해 커밋한다.
+
 1. **CBP CSMS** <https://content.govdelivery.com/accounts/USDHSCBP/bulletins> — 지난주 공지 훑기.
    관세 관련 키워드: `Section 301`, `Section 122`, `IEEPA`, `duty`, `9903`
 2. **USTR** <https://ustr.gov/about/policy-offices/press-office/press-releases> — 신규 조치·면제 목록
 3. **Federal Register** — `Section 301` 검색, 지난 7일
 
 **변경 없음이면 여기서 끝.** 로그에 "변경 없음" 한 줄 남기고 종료.
+
+> **왜 대조가 필요한가.** 0021(중복)·0022(아카이브 불변)는 DB 제약이라 그 경로를
+> 통과할 때만 막는다. SQL Editor 는 이 저장소에서 실제로 쓰이는 경로이고, 0022 에는
+> 의도적인 탈출구(`set local app.allow_archive_edit = 'on'`)도 있다. 그 길로 원장이
+> 달라지면 아무것도 알려주지 않는다. 매니페스트는 그 위의 탐지 계층이다.
+>
+> 대조는 매니페스트에 박힌 `as_of` 를 기준일로 쓴다. 오늘 날짜를 쓰면 아무도
+> 건드리지 않아도 만료가 진행돼 거짓 드리프트가 뜨고, **거짓 경보를 내는 탐지기는
+> 곧 꺼진다.**
 
 ### 변경이 있으면 — 판별 (60~90분)
 
@@ -221,7 +243,11 @@ confirmed 가 8자리 광범위 매칭이고 unverified 가 10자리 정밀 매�
 3. `source` 컬럼에 1차 출처 인용, `note` 에 미확인 항목
 4. `npm run test` — 골든이 통과하는지
 5. `SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… npm run seed:rates`
-6. 커밋 (메시지에 1차 출처 인용)
+6. `SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… npm run ledger:manifest` — 매니페스트 갱신.
+   **`git diff data/ledger.manifest.json` 이 이번 변경의 요약이다.** 프로그램별 행수와
+   해시가 어떻게 움직였는지 보고, 의도한 것만 바뀌었는지 눈으로 확인한 뒤 커밋한다.
+   의도하지 않은 프로그램이 함께 움직였다면 여기서 멈춘다
+7. 커밋 (메시지에 1차 출처 인용, 매니페스트 diff 포함)
 
 > **종료된 프로그램은 삭제하지 않는다.** `effective_to` 만 채운다. 과거 선적을
 > 그 시점 세율로 다시 계산할 수 있어야 하고, 감사 추적이 남아야 한다.

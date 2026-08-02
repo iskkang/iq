@@ -19,6 +19,8 @@
     "bench": "tsx scripts/bench-500.ts",
     "golden": "tsx scripts/golden-run.ts",
     "seed:rates": "tsx supabase/seed/seed-rates.ts",
+    "ledger:manifest": "tsx scripts/ledger-manifest.ts",
+    "ledger:verify": "tsx scripts/ledger-manifest.ts --mode=verify",
     "seo:wave1": "tsx scripts/select-wave1.ts",
     "smoke:funnel": "node scripts/smoke-funnel.mjs",
     "hts:fetch": "tsx scripts/fetch-hts-catalog.ts",
