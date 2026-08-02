@@ -219,6 +219,8 @@ const FUNNEL_PAGES: Array<[string, string[]]> = [
   ['dist/index.html', ['signup_submitted', 'signup_saved', 'signup_failed']],
   ['dist/hts.html', ['hts_lookup_submitted', 'hts_lookup_results', 'watch_submitted', 'watch_saved', 'watch_failed']],
   ['dist/section-301.html', ['section301_lookup_submitted', 'section301_watch_submitted', 'section301_watch_failed']],
+  // landed cost 의도 광고의 착지 페이지. 계측 없이 광고비를 보내면 지난번과 같아진다.
+  ['dist/sample-report.html', ['sample_cta_submitted', 'sample_saved', 'sample_failed']],
 ]
 for (const [file, events] of FUNNEL_PAGES) {
   const html = read(file)

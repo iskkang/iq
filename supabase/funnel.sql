@@ -10,6 +10,15 @@
 -- 조회마다 미묘하게 달라지고 비교가 안 된다. 질문을 파일에 고정한다.
 --
 -- 모든 쿼리는 최근 7 일 기준이다. 기간을 바꾸려면 interval 만 고친다.
+--
+-- ── 내부 방문은 제외한다 ────────────────────────────────────────
+-- 소유자가 배포를 확인하려고 페이지를 도는 것만으로 퍼널이 오염된다. 실제로
+-- 광고 재개 직후 첫 조회에서 5 세션 24 page_view 가 전부 내부 방문이었고,
+-- 그게 광고 트래픽처럼 보였다. 표본이 20~30 세션인 단계에서 이건 결론을 바꾼다.
+--
+-- 브라우저에서 /?internal=1 을 한 번 열면 그 브라우저의 이후 이벤트에
+-- internal:true 가 붙는다 (/?internal=0 으로 해제). 아래 쿼리들은 전부 뺀다.
+-- 이벤트 자체는 남으므로 "계측이 도는가" 는 여전히 자기 브라우저로 확인할 수 있다.
 
 -- ═══════════════════════════════════════════════════════════════
 -- 1. 퍼널 — 어디서 떠나는가
@@ -27,6 +36,7 @@ with s as (
          max((event_name = 'watch_saved')::int)           as watch_saved
   from public.analytics_events
   where occurred_at > now() - interval '7 days'
+  and coalesce((properties->>'internal')::boolean, false) = false
   group by session_id
 )
 select
@@ -62,6 +72,7 @@ with attr as (
          coalesce(properties->>'utm_term',     '(none)')   as term
   from public.analytics_events
   where occurred_at > now() - interval '7 days'
+  and coalesce((properties->>'internal')::boolean, false) = false
   order by session_id, occurred_at
 ),
 act as (
@@ -71,6 +82,7 @@ act as (
          max((event_name = 'watch_saved')::int)          as converted
   from public.analytics_events
   where occurred_at > now() - interval '7 days'
+  and coalesce((properties->>'internal')::boolean, false) = false
   group by session_id
 )
 select a.source, a.campaign, a.term,
@@ -99,6 +111,7 @@ select
 from public.analytics_events
 where event_name = 'hts_lookup_empty'
   and occurred_at > now() - interval '7 days'
+  and coalesce((properties->>'internal')::boolean, false) = false
 group by 1, 2
 order by times desc, last_seen desc
 limit 50;
@@ -122,6 +135,7 @@ select
   max((properties->>'ms')::numeric)                                           as max_ms
 from public.analytics_events
 where occurred_at > now() - interval '7 days'
+  and coalesce((properties->>'internal')::boolean, false) = false
   and properties ? 'ms'
 group by 1
 order by 1;
@@ -140,7 +154,8 @@ select
   round(100.0 * count(distinct session_id) filter (where event_name = 'origin_prompt_clicked')
               / nullif(count(distinct session_id) filter (where event_name = 'hts_result_no_origin'), 0), 1) as pct
 from public.analytics_events
-where occurred_at > now() - interval '7 days';
+where occurred_at > now() - interval '7 days'
+  and coalesce((properties->>'internal')::boolean, false) = false;
 
 
 -- ═══════════════════════════════════════════════════════════════
@@ -155,5 +170,6 @@ select
 from public.analytics_events
 where event_name in ('hts_lookup_failed', 'watch_failed', 'signup_failed', 'section301_watch_failed')
   and occurred_at > now() - interval '7 days'
+  and coalesce((properties->>'internal')::boolean, false) = false
 group by 1, 2
 order by n desc;
