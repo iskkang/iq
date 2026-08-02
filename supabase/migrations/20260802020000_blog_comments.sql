@@ -46,6 +46,13 @@ revoke all on table public.blog_comments from anon, authenticated;
 grant select, insert on table public.blog_comments to anon, authenticated;
 grant usage, select on sequence public.blog_comments_id_seq to anon, authenticated;
 
+-- create policy 에는 if not exists 가 없다. 테이블·인덱스만 idempotent 하고
+-- 정책은 아니면, 두 번째 적용이 **중간에서** 실패한다 — 테이블은 생기고 정책은
+-- 반쯤 붙은 상태다. 이 저장소는 마이그레이션 이름 규칙이 섞여 있어 원격 이력이
+-- 어디까지 반영됐는지 확실하지 않으므로, 통째로 다시 돌려도 같은 결과가 나오게 둔다.
+drop policy if exists "blog_comments_public_read"   on public.blog_comments;
+drop policy if exists "blog_comments_public_insert" on public.blog_comments;
+
 -- 읽기: 숨기지 않은 것만. hidden 행은 존재 자체가 안 보인다
 create policy "blog_comments_public_read" on public.blog_comments
   for select to anon, authenticated
