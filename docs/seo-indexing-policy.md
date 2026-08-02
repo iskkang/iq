@@ -185,15 +185,17 @@ doorway page 로 명시한 패턴 — "사소한 변형으로 같은 목적지�
 |---|---|
 | 전환 | **63 클릭 · ₩134,729 · 전환 0** |
 | `/section-301` 방문 페이지 | 노출 40 · 클릭 **0** · CTR **0 %** |
-| 비-US 검색(인도 HSN·캐나다·영국) | 노출의 약 12 % |
+| 비-US 검색(인도 HSN·캐나다·영국) | 노출 1.3 % · 비용 1.6 % ([ads-negative-keywords.md](ads-negative-keywords.md)) |
 | 노출 점유율 | 우리 20.29 % · flexport.com **23.57 %** · zonos.com 12.07 % |
 | 검색 최상단 비율 | 우리 19.20 % · aboutcoupang.com 69.77 % |
 
 `/section-301` 은 전용 페이지를 앞당겨 만든 곳인데(백로그 C-1) 노출 40 에 클릭
 0 이다. 페이지 문제인지 광고 문구 문제인지부터 갈라야 한다.
 
-제외 키워드(`jav` · `boulder` · `india` · `canada` · `england`)는 바로 넣을 수
-있다. `hsn` 자체는 `hsn code usa` 처럼 US 의도일 수 있어 판단이 필요하다.
+제외 키워드 목록과 근거는 [ads-negative-keywords.md](ads-negative-keywords.md) 에
+따로 뒀다. **낭비 지출 전액이 `hsn code for boulder` 클릭 한 건(₩2,157)이라**
+`boulder` 하나로 100 % 가 정리된다. `hsn` 자체는 `hsn code usa` 처럼 US 의도일 수
+있어 넣지 않았다.
 
 ---
 

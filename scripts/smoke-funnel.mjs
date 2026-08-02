@@ -22,13 +22,42 @@ import net from 'node:net'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PORT = 4179
 
-// detached: npx 가 vite 를 자식으로 띄우므로 npx 만 죽이면 vite 가 남아
-// 포트를 물고 이벤트 루프도 붙잡는다. 프로세스 그룹째 정리하려고 분리한다.
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
+/**
+ * npx 가 아니라 설치된 실행 파일을 직접 부른다.
+ *
+ * npx 는 로컬에 있어도 해석 단계를 한 번 더 거치고, CI 콜드 스타트에서 그
+ * 시간이 준비 판정 창을 넘길 수 있다. 실제로 CI 첫 실행이 그렇게 죽었다.
+ *
+ * --host 127.0.0.1 을 명시하는 이유가 따로 있다. vite 의 기본 host 는
+ * `localhost` 이고, 그건 **런타임이 해석하는 이름**이다. GitHub 러너처럼
+ * localhost 가 ::1 로 먼저 풀리는 환경에서는 vite 가 [::1]:4179 에만 바인딩하고,
+ * 아래 TCP 프로브(127.0.0.1)는 영원히 연결되지 않는다 — 서버는 멀쩡히 떠 있는데
+ * "안 떴다" 로 죽는다. 이름 해석을 빼고 주소를 고정하면 그 어긋남이 사라진다.
+ *
+ * detached: 프로세스 그룹째 정리하려고 분리한다. 안 하면 vite 가 남아 포트를
+ * 물고 이벤트 루프도 붙잡는다.
+ */
+const VITE = join(root, 'node_modules', '.bin', 'vite')
+const server = spawn(VITE, ['preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
   cwd: root,
-  stdio: 'pipe',
+  stdio: ['ignore', 'pipe', 'pipe'],
   detached: true,
 })
+
+/**
+ * 서버 출력을 모아 둔다 — **실패했을 때 이유를 보여주기 위해서다.**
+ *
+ * 파이프로 삼키고 "안 떴다" 만 던지면, 가드가 왜 죽었는지 알 수 없어 사람들이
+ * 가드를 끈다. CI 첫 실행이 정확히 그 상태였다.
+ */
+let serverLog = ''
+const keep = (d) => { serverLog += String(d); if (serverLog.length > 4000) serverLog = serverLog.slice(-4000) }
+server.stdout.on('data', keep)
+server.stderr.on('data', keep)
+
+let serverExited = null
+server.on('exit', (code, signal) => { serverExited = signal ? `signal ${signal}` : `code ${code}` })
+
 function stopServer() {
   try { process.kill(-server.pid) } catch { /* 이미 죽었으면 그만 */ }
 }
@@ -52,14 +81,20 @@ function portOpen(port) {
   })
 }
 
+// CI 콜드 스타트는 로컬보다 느리다. 60 초까지 기다리되, 서버가 먼저 죽으면
+// 기다릴 이유가 없으므로 즉시 빠져나온다.
 let ready = false
-for (let i = 0; i < 40 && !ready; i++) {
+for (let i = 0; i < 120 && !ready && serverExited === null; i++) {
   ready = await portOpen(PORT)
   if (!ready) await new Promise((r) => setTimeout(r, 500))
 }
 if (!ready) {
   stopServer()
-  throw new Error(`preview 서버가 ${PORT} 에서 뜨지 않았다 (포트 점유 여부를 확인할 것)`)
+  const why = serverExited ? `서버가 먼저 종료됐다 (${serverExited})` : '60초 안에 포트가 열리지 않았다'
+  throw new Error(
+    `preview 서버가 ${PORT} 에서 뜨지 않았다 — ${why}\n` +
+      `── 서버 출력 ──────────────────────────────────\n${serverLog.trim() || '(출력 없음)'}`,
+  )
 }
 
 const fails = []
@@ -79,9 +114,11 @@ const ctx = await browser.newContext()
  * 이 스크립트가 검사하는 건 우리 계측이지 서드파티가 아니고, 샌드박스에서는
  * 외부 요청이 응답 없이 매달려 networkidle 이 영원히 안 온다.
  */
+// 127.0.0.1 로 통일한다 — CI 에서 localhost 가 ::1 로 풀리면 vite 가 바인딩한
+// 127.0.0.1 과 어긋나 페이지가 아예 안 열린다.
 await ctx.route('**/*', (route) => {
   const url = route.request().url()
-  return url.includes('localhost') ? route.continue() : route.abort()
+  return url.includes('127.0.0.1') ? route.continue() : route.abort()
 })
 
 /** 이 페이지 로드에서 잡힌 이벤트 이름들 */
@@ -101,7 +138,7 @@ async function visit(path) {
   seen = []
   const page = await ctx.newPage()
   page.setDefaultTimeout(10000)
-  await page.goto(`http://localhost:${PORT}${path}`, { waitUntil: 'load', timeout: 15000 })
+  await page.goto(`http://127.0.0.1:${PORT}${path}`, { waitUntil: 'load', timeout: 15000 })
   await page.waitForTimeout(400) // page_view 는 DOMContentLoaded 뒤에 나간다
   return page
 }

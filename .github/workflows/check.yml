@@ -83,3 +83,42 @@ jobs:
             echo "::error::'npm run blog:build' 를 돌리고 결과를 커밋하세요."
             exit 1
           fi
+
+  # ── 퍼널 계측 ────────────────────────────────────────────────────
+  # 별도 job 인 이유: 브라우저는 성격이 다른 의존성이다. 다운로드가 흔들릴 때
+  # 타입·테스트·린트 신호까지 같이 막히면 안 되고, 병렬로 돌아 전체 시간도
+  # 늘지 않는다.
+  #
+  # 왜 검사하는가: 계측은 빠져도 페이지가 멀쩡히 동작해서 사람이 알아채지
+  # 못한다. 실제로 /app 안에만 계측이 있는 채로 63 클릭 ₩134,729 을 썼고,
+  # 그 돈이 어디서 죽었는지 지금도 모른다. check-build 는 문자열 존재만 보므로
+  # **정말 전송되는지**는 브라우저를 띄워야 알 수 있다.
+  funnel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      # --only-shell 은 쓰지 않는다. 헤드리스 셸만 받으면 Playwright 버전에 따라
+      # chromium.launch() 가 실행 파일을 못 찾고, 그 실패는 계측 회귀와 구별되지
+      # 않는다. 가드가 자기 환경 문제로 죽으면 사람들은 가드를 끈다.
+      - name: Chromium 설치
+        run: npx playwright install --with-deps chromium
+
+      - name: 프로덕션 빌드
+        env:
+          VITE_SUPABASE_URL: https://ciplaceholder.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-placeholder-not-a-real-key
+        run: npm run build
+
+      # page_view · 조회 · 폼 제출/실패 · 댓글 저장/실패 이벤트가 실제로 나가는지,
+      # 그리고 저장이 실패했을 때 사용자에게 메시지가 보이는지까지 본다.
+      - name: 퍼널 이벤트가 실제로 전송되는가
+        run: npm run smoke:funnel
