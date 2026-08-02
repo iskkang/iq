@@ -167,18 +167,7 @@ if (aboutHtml !== null) {
   if (team) {
     const openTag = team[0].slice(0, team[0].indexOf('>') + 1)
     const hidden = /\shidden(?=[\s>=])/.test(openTag)
-    /**
-     * 이름 칸에는 자리표시자 이름이 들어가 있다. `PERSON_1_NAME` 같은 토큰과
-     * 달리 사람 이름처럼 생겨서, 역할·배경만 채우고 hidden 을 지우면 가드가
-     * 아무 말 없이 통과해 버린다 — 자리표시자가 사람 이름 모양일 때 정확히
-     * 그 구멍이 생긴다. 그래서 이 이름들도 토큰과 같이 취급한다.
-     * 실명으로 바꾸면 자동으로 통과한다.
-     */
-    const PLACEHOLDER_NAMES = ['Emilie Johnson', 'Sam Smith']
-    const placeholders = [
-      ...[...team[0].matchAll(/PERSON_\d+_(?:NAME|ROLE|BIO)/g)].map((m) => m[0]),
-      ...PLACEHOLDER_NAMES.filter((n) => team[0].includes(n)),
-    ]
+    const placeholders = [...team[0].matchAll(/PERSON_\d+_(?:NAME|ROLE|BIO)/g)].map((m) => m[0])
     if (!hidden && placeholders.length > 0) {
       fail.push(
         `dist/about.html: 팀 섹션이 자리표시자를 채우지 않은 채 공개된다 — ${[...new Set(placeholders)].join(', ')}. ` +
