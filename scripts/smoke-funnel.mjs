@@ -14,7 +14,7 @@
  */
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import net from 'node:net'
@@ -110,14 +110,33 @@ const browser = await chromium.launch(
 const ctx = await browser.newContext()
 
 /**
- * 외부 호스트는 끊는다 (gtag · plausible · tailwind CDN).
- * 이 스크립트가 검사하는 건 우리 계측이지 서드파티가 아니고, 샌드박스에서는
- * 외부 요청이 응답 없이 매달려 networkidle 이 영원히 안 온다.
+ * 외부 호스트는 끊는다 (gtag · plausible). 이 스크립트가 검사하는 건 우리
+ * 계측이지 서드파티가 아니고, 샌드박스에서는 외부 요청이 응답 없이 매달려
+ * networkidle 이 영원히 안 온다.
+ *
+ * ── Tailwind 만은 예외다 ─────────────────────────────────────────
+ * 랜딩(index.html)은 스타일 전체가 cdn.jsdelivr.net 의 Tailwind 브라우저
+ * 빌드에 달려 있다. 그걸 끊으면 랜딩이 무스타일로 렌더되고, 레이아웃을 보는
+ * 검사가 전부 무의미해진다 — 실제로 그 상태로 **랜딩이 모바일에서 가로로
+ * 299px 넘치는 결함이 프로덕션까지 갔다.** 표(min-w 640px)를 담은 카드가
+ * 그리드 아이템인데 min-width:auto 라 축소를 거부했고, 헤더와 본문이 서로
+ * 어긋나 보였다. 아무 검사도 잡지 못했다.
+ *
+ * npm 으로 같은 빌드를 받아 로컬에서 응답한다. CDN 을 타지 않으므로
+ * 네트워크에 매달리지 않고, 랜딩이 실제 스타일로 렌더된다.
  */
+const TAILWIND = readFileSync(
+  new URL('../node_modules/@tailwindcss/browser/dist/index.global.js', import.meta.url),
+  'utf-8',
+)
+
 // 127.0.0.1 로 통일한다 — CI 에서 localhost 가 ::1 로 풀리면 vite 가 바인딩한
 // 127.0.0.1 과 어긋나 페이지가 아예 안 열린다.
 await ctx.route('**/*', (route) => {
   const url = route.request().url()
+  if (url.includes('tailwindcss')) {
+    return route.fulfill({ status: 200, contentType: 'text/javascript', body: TAILWIND })
+  }
   return url.includes('127.0.0.1') ? route.continue() : route.abort()
 })
 
@@ -145,6 +164,34 @@ async function visit(path) {
 
 function expect(cond, msg) {
   if (!cond) fails.push(msg)
+}
+
+// ── 0. 모바일에서 가로로 넘치지 않는다 ──────────────────────────
+// 넘치면 헤더(뷰포트 폭 고정)와 본문이 어긋나 보이고, 사용자는 오른쪽으로
+// 밀어야 내용을 본다. 광고가 착지하는 페이지에서 이건 조용한 손실이다.
+// 실제로 랜딩이 390px 에서 689px 로 넘친 채 배포됐고 아무도 못 잡았다.
+{
+  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true })
+  await mobile.route('**/*', (route) => {
+    const url = route.request().url()
+    if (url.includes('tailwindcss')) {
+      return route.fulfill({ status: 200, contentType: 'text/javascript', body: TAILWIND })
+    }
+    return url.includes('127.0.0.1') ? route.continue() : route.abort()
+  })
+  for (const path of ['/', '/hts', '/about', '/section-301', '/sample-report']) {
+    const page = await mobile.newPage()
+    page.setDefaultTimeout(10000)
+    await page.goto(`http://127.0.0.1:${PORT}${path}`, { waitUntil: 'load', timeout: 15000 })
+    await page.waitForTimeout(900) // Tailwind 브라우저 빌드가 CSS 를 만들 시간
+    const { vw, sw } = await page.evaluate(() => ({
+      vw: document.documentElement.clientWidth,
+      sw: document.documentElement.scrollWidth,
+    }))
+    expect(sw <= vw + 1, `${path}: 모바일에서 가로로 넘친다 (scrollWidth ${sw} > viewport ${vw})`)
+    await page.close()
+  }
+  await mobile.close()
 }
 
 // ── 1. page_view 가 모든 공개 페이지에서 나간다 ─────────────────
