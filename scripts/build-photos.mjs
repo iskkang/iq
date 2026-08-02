@@ -29,17 +29,39 @@ import { resolve } from 'node:path'
 /** 잘라낼 오른쪽 비율 — 워터마크를 확실히 벗어난다. 세로는 그대로 둔다. */
 const CROP_RIGHT = 0.115
 
-const TARGETS = [
-  { name: 'terminal', maxW: 1440, quality: 0.82 },
-  { name: 'operations', maxW: 1100, quality: 0.82 },
-  { name: 'layers', maxW: 1100, quality: 0.82 },
-]
+const PRESETS = {
+  terminal: { maxW: 1440, quality: 0.82 },
+  operations: { maxW: 1100, quality: 0.82 },
+  layers: { maxW: 1100, quality: 0.82 },
+  seal: { maxW: 1440, quality: 0.82 },
+}
 
-const inputs = process.argv.slice(2)
-if (inputs.length !== TARGETS.length) {
-  console.error(`입력 ${TARGETS.length} 개가 필요하다: ${TARGETS.map((t) => t.name).join(', ')}`)
+/**
+ * 인자는 `이름=경로` 쌍이다. 준 것만 만든다.
+ *
+ * 처음에는 위치 인자로 세 장을 한꺼번에 받았는데, 네 번째를 추가하려면 앞의 세
+ * 장을 다시 인코딩해야 했다. 재인코딩 결과가 1 바이트라도 다르면 관계없는
+ * 파일이 diff 에 섞이고, 리뷰어는 "이 사진도 바뀌었나" 를 확인할 방법이 없다.
+ */
+const args = process.argv.slice(2)
+const TARGETS = args.map((a) => {
+  const i = a.indexOf('=')
+  if (i < 0) {
+    console.error(`인자는 이름=경로 형식이어야 한다: ${a}`)
+    process.exit(1)
+  }
+  const name = a.slice(0, i)
+  if (!PRESETS[name]) {
+    console.error(`모르는 이름: ${name} (${Object.keys(PRESETS).join(', ')} 중 하나)`)
+    process.exit(1)
+  }
+  return { name, src: a.slice(i + 1), ...PRESETS[name] }
+})
+if (TARGETS.length === 0) {
+  console.error(`만들 대상이 없다. 예: npm run photo:build -- seal=/path/to.png`)
   process.exit(1)
 }
+const inputs = TARGETS.map((t) => t.src)
 
 const OUT_DIR = resolve(process.cwd(), 'public/photo')
 mkdirSync(OUT_DIR, { recursive: true })
