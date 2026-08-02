@@ -32,15 +32,15 @@
 <body class="bg-slate-950 text-slate-100 antialiased">
 <script>var CONFIG={SUPABASE_URL:'%VITE_SUPABASE_URL%',SUPABASE_ANON_KEY:'%VITE_SUPABASE_ANON_KEY%'}</script>
 <header class="sticky top-0 z-50 border-b border-white/10 bg-slate-950/95 backdrop-blur">
-  <div class="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-5">
+  <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:py-4 sm:px-5">
     <a href="/" class="flex items-center gap-2.5"><span class="rounded-lg bg-[#2d6099] px-2.5 py-1.5 text-sm font-black">LIQ</span><span class="text-lg font-semibold">LandedIQ</span></a>
-    <nav class="flex items-center gap-2 text-xs sm:gap-4 sm:text-sm">
-      <a href="/hts" class="rounded-lg border border-white/15 px-3 py-2 font-semibold">Free HTS</a>
-      <a href="/blog" class="hidden text-slate-300 sm:inline">Blog</a><a href="/section-301" class="hidden text-slate-300 sm:inline">Section 301</a>
+    <a href="#beta-access" class="order-2 rounded-lg bg-[#2d6099] px-3 py-2 text-xs font-semibold sm:order-3 sm:text-sm">Get Beta Access</a>
+      <nav class="order-3 flex w-full flex-wrap items-center gap-x-4 gap-y-2 text-xs sm:order-2 sm:ml-auto sm:w-auto sm:gap-4 sm:text-sm">
+      <a href="/hts" class="rounded-lg border border-white/15 px-3 py-1.5 font-semibold sm:py-2">Free HTS</a>
+      <a href="/blog" class="text-slate-300">Blog</a><a href="/section-301" class="text-slate-300">Section 301</a>
       <a href="/sample-report" class="hidden text-slate-300 md:inline">Sample report</a>
       <a href="/about" class="hidden text-slate-300 lg:inline">About</a>
       <a href="/app" class="hidden text-slate-300 sm:inline">Sign in</a>
-      <a href="#beta-access" class="rounded-lg bg-[#2d6099] px-3 py-2 font-semibold">Get Beta Access</a>
     </nav>
   </div>
 </header>
@@ -170,7 +170,7 @@
 </main>
 <footer class="border-t border-white/10 bg-slate-950">
   <div class="mx-auto max-w-6xl px-5 py-10 text-xs leading-6 text-slate-500">
-    <div class="flex flex-col justify-between gap-6 md:flex-row"><div class="max-w-2xl"><p class="text-base font-semibold text-white">LandedIQ</p><p class="mt-2">LandedIQ helps importers connect HTS duty, landed cost and margin impact. Developed by logistics operators for practical import decisions.</p></div><nav class="flex flex-wrap gap-x-5 gap-y-2 md:justify-end"><a href="/about" class="hover:text-white">About</a><a href="/methodology" class="hover:text-white">Methodology</a><a href="/hts" class="hover:text-white">HTS Lookup</a><a href="/section-301" class="hover:text-white">Section 301</a><a href="/sample-report" class="hover:text-white">Sample report</a><a href="/privacy" class="hover:text-white">Privacy</a><a href="/terms" class="hover:text-white">Terms</a><a href="mailto:support@landediq.app" class="hover:text-white">Support</a></nav></div>
+    <div class="flex flex-col justify-between gap-6 md:flex-row"><div class="max-w-2xl"><p class="text-base font-semibold text-white">LandedIQ</p><p class="mt-2">LandedIQ helps importers connect HTS duty, landed cost and margin impact. Developed by logistics operators for practical import decisions.</p></div><nav class="flex flex-wrap gap-x-5 gap-y-2 md:justify-end"><a href="/about" class="hover:text-white">About</a><a href="/methodology" class="hover:text-white">Methodology</a><a href="/blog" class="hover:text-white">Blog</a><a href="/hts" class="hover:text-white">HTS Lookup</a><a href="/section-301" class="hover:text-white">Section 301</a><a href="/sample-report" class="hover:text-white">Sample report</a><a href="/privacy" class="hover:text-white">Privacy</a><a href="/terms" class="hover:text-white">Terms</a><a href="mailto:support@landediq.app" class="hover:text-white">Support</a></nav></div>
     <div class="mt-6 border-t border-white/10 pt-5"><p>LandedIQ is operated by MTL Co., Ltd. · support@landediq.app</p><p>Estimates are not customs, legal or tax advice. Final classification and duty liability remain with the importer of record. · © 2026 LandedIQ</p></div>
   </div>
 </footer>

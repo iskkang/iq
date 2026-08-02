@@ -34,6 +34,11 @@ const PRESETS = {
   operations: { maxW: 1100, quality: 0.82 },
   layers: { maxW: 1100, quality: 0.82 },
   seal: { maxW: 1440, quality: 0.82 },
+  // 팀 인물 사진. 원형 아바타는 56px 로 표시하지만 2배로 만들어 고밀도 화면에서
+  // 뭉개지지 않게 한다. square:true 는 워터마크 크롭 대신 중앙 정사각 크롭을 쓴다 —
+  // 인물 사진은 오른쪽을 잘라내면 얼굴이 치우친다.
+  'team-emilie': { maxW: 112, quality: 0.86, square: true },
+  'team-sam': { maxW: 112, quality: 0.86, square: true },
 }
 
 /**
@@ -74,13 +79,22 @@ const page = await browser.newPage()
 for (const [i, t] of TARGETS.entries()) {
   const b64 = readFileSync(resolve(inputs[i])).toString('base64')
   const out = await page.evaluate(
-    async ({ b64, cropRight, maxW, quality }) => {
+    async ({ b64, cropRight, maxW, quality, square }) => {
       const img = new Image()
       img.src = 'data:image/png;base64,' + b64
       await img.decode()
 
-      const sw = Math.round(img.naturalWidth * (1 - cropRight))
-      const sh = img.naturalHeight
+      let sx = 0, sy = 0, sw, sh
+      if (square) {
+        // 중앙 정사각 크롭. 얼굴은 보통 위쪽에 있으므로 세로는 22% 지점을 중심으로 잡는다.
+        const side = Math.min(img.naturalWidth, img.naturalHeight)
+        sw = sh = side
+        sx = Math.round((img.naturalWidth - side) / 2)
+        sy = Math.round((img.naturalHeight - side) * 0.22)
+      } else {
+        sw = Math.round(img.naturalWidth * (1 - cropRight))
+        sh = img.naturalHeight
+      }
       const scale = Math.min(1, maxW / sw) // 확대하지 않는다 — 없는 디테일이 생기지 않는다
       const dw = Math.round(sw * scale)
       const dh = Math.round(sh * scale)
@@ -90,12 +104,12 @@ for (const [i, t] of TARGETS.entries()) {
       c.height = dh
       const ctx = c.getContext('2d')
       ctx.imageSmoothingQuality = 'high'
-      ctx.drawImage(img, 0, 0, sw, sh, 0, 0, dw, dh)
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dw, dh)
 
       const url = c.toDataURL('image/webp', quality)
       return { data: url.split(',')[1], w: dw, h: dh, srcW: img.naturalWidth, srcH: img.naturalHeight }
     },
-    { b64, cropRight: CROP_RIGHT, maxW: t.maxW, quality: t.quality },
+    { b64, cropRight: CROP_RIGHT, maxW: t.maxW, quality: t.quality, square: !!t.square },
   )
 
   const buf = Buffer.from(out.data, 'base64')
