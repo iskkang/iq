@@ -35,6 +35,19 @@ const MAX_PER_CHAPTER = 8
  */
 const SEED_PREFIXES = ['711319', '39269'] as const
 
+/**
+ * 리스트별 발효일. `supabase/seed/duty_programs.csv` 와 같은 값이어야 한다 —
+ * 페이지가 "언제부터" 를 말하는 근거이고, 원장과 갈라지면 그게 곧 거짓말이 된다.
+ * section301_lists.json 에는 날짜가 없어서 여기 둔다.
+ */
+const LIST_EFFECTIVE: Record<string, string> = {
+  list1: '2018-07-06',
+  list2: '2018-08-23',
+  list3: '2019-05-10',
+  list4a: '2020-02-14',
+}
+const UNKNOWN_EFFECTIVE = '1900-01-01'
+
 interface CatalogLine {
   code: string
   description: string
@@ -42,7 +55,7 @@ interface CatalogLine {
 }
 
 interface ListFile {
-  lists: Array<{ list: string; rate: number; active: boolean; codes: string[] }>
+  lists: Array<{ list: string; provision: string; rate: number; active: boolean; codes: string[] }>
 }
 
 function loadCatalog(): CatalogLine[] {
@@ -89,9 +102,12 @@ function main() {
 
   const rateByCode = new Map<string, number>()
   const listByCode = new Map<string, string[]>()
+  /** 리스트별 세율·조항·발효일. 페이지가 "언제부터" 를 말하려면 필요하다 */
+  const listMeta = new Map<string, { rate: number; provision: string; effective_from: string }>()
   const lists = (JSON.parse(readFileSync(LISTS, 'utf-8')) as ListFile).lists
   for (const l of lists) {
     if (!l.active) continue // 만료된 리스트는 지금 세율에 안 붙는다
+    listMeta.set(l.list, { rate: l.rate, provision: l.provision, effective_from: LIST_EFFECTIVE[l.list] ?? UNKNOWN_EFFECTIVE })
     for (const c of l.codes) {
       rateByCode.set(c, (rateByCode.get(c) ?? 0) + l.rate)
       listByCode.set(c, [...(listByCode.get(c) ?? []), l.list])
@@ -132,14 +148,22 @@ function main() {
         max_per_chapter: MAX_PER_CHAPTER,
         seed_prefixes: SEED_PREFIXES,
         seed_note: '광고 검색어 리포트(2026-07-30~08-02)의 US 수입자 의도 코드. hsn 질의는 제외했다.',
+        as_of: new Date().toISOString().slice(0, 10),
+        note: '이 파일이 발행 대상이다. build-hts-pages 는 카탈로그가 아니라 이걸 읽는다 — git diff 가 곧 무엇을 발행하는지의 기록이다.',
         codes: selected.map((s) => ({
           code: s.code,
           display: dotted(s.code),
           path: pagePath(s.code),
-          programs: s.programs,
-          program_rate: s.programRate,
-          ad_valorem: s.adValorem,
           description: s.description,
+          ad_valorem: s.adValorem,
+          program_rate: s.programRate,
+          programs: s.programs.map((list) => {
+            const meta = listMeta.get(list)
+            if (!meta) throw new Error(`${s.code}: 리스트 ${list} 의 메타를 찾지 못했다`)
+            return { list, rate: meta.rate, provision: meta.provision, effective_from: meta.effective_from }
+          }),
+          // 같은 6자리 안의 다른 8자리. 렌더러가 카탈로그 없이도 형제를 그릴 수 있게 여기 담는다
+          siblings: [...eight.keys()].filter((c) => c !== s.code && c.slice(0, 6) === s.code.slice(0, 6)).sort().slice(0, 12),
         })),
       },
       null,
