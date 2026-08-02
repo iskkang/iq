@@ -42,6 +42,31 @@
    * 이벤트 하나를 남긴다. 실패는 삼킨다 — 계측이 제품 동작을 막으면 안 된다.
    * 이름은 src/lib/analytics.ts 와 같은 테이블·같은 형태를 쓴다.
    */
+  /**
+   * ── 내부 방문 표시 ──────────────────────────────────────────────
+   * 소유자가 배포를 확인하려고 페이지를 도는 것만으로 퍼널이 오염된다.
+   * 실제로 광고 재개 직후 첫 조회에서 5 세션 24 page_view 가 전부 내부
+   * 방문이었고, 그게 광고 트래픽처럼 보였다. 표본이 20~30 세션인 단계에서
+   * 이 오염은 결론을 바꾼다.
+   *
+   * 버리지 않고 표시한다. 버리면 소유자가 "계측이 도는가" 를 자기 브라우저로
+   * 확인할 방법이 사라진다 — 지난번 실패가 정확히 그 확인을 못 해서 생겼다.
+   * 표시해 두고 퍼널 쿼리(supabase/funnel.sql)에서만 뺀다.
+   *
+   *   /?internal=1  이 브라우저의 이후 모든 이벤트에 internal:true 를 붙인다
+   *   /?internal=0  해제
+   */
+  var INTERNAL_KEY = 'landediq_internal'
+  try {
+    var flag = new URLSearchParams(location.search).get('internal')
+    if (flag === '1') localStorage.setItem(INTERNAL_KEY, '1')
+    else if (flag === '0') localStorage.removeItem(INTERNAL_KEY)
+  } catch { /* 프라이빗 모드 — 표시가 안 되어도 페이지는 돈다 */ }
+
+  function isInternal() {
+    try { return localStorage.getItem(INTERNAL_KEY) === '1' } catch { return false }
+  }
+
   window.track = function (eventName, properties) {
     var c = cfg()
     if (!c) return
@@ -53,6 +78,7 @@
     props.utm_term = p.get('utm_term')
     props.utm_content = p.get('utm_content')
     props.device = matchMedia('(max-width: 767px)').matches ? 'mobile' : 'desktop'
+    if (isInternal()) props.internal = true
 
     try {
       fetch(c.SUPABASE_URL + '/rest/v1/analytics_events', {
