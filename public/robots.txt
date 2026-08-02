@@ -1,0 +1,8 @@
+# 색인 정책: docs/seo-indexing-policy.md
+User-agent: *
+Allow: /
+
+# 로그인 뒤 워크스페이스. 공개 콘텐츠가 없고 canonical 도 없다.
+Disallow: /app
+
+Sitemap: https://www.landediq.app/sitemap.xml

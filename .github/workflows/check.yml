@@ -59,6 +59,18 @@ jobs:
             exit 1
           fi
 
+      # 사이트맵은 각 페이지의 canonical 에서 뽑는다. 손으로 고치면 그 규칙이 깨지고,
+      # canonical 과 사이트맵이 서로 다른 정본을 말하게 된다.
+      - name: 사이트맵이 canonical 과 일치하는가
+        run: |
+          npm run sitemap:build
+          if ! git diff --exit-code -- public/robots.txt public/sitemap.xml public/sitemaps/; then
+            echo "::error::사이트맵이 페이지의 canonical 과 다릅니다."
+            echo "::error::public/sitemap.xml 을 손으로 고치지 마세요 — 생성물입니다."
+            echo "::error::'npm run sitemap:build' 를 돌리고 결과를 커밋하세요."
+            exit 1
+          fi
+
       # 발행된 HTML 을 손으로 고치면 원문(content/blog/*.md)과 갈라진다.
       # 갈라지는 순간 "무엇이 발행됐는가" 의 진실 출처가 둘이 된다 — 샘플 리포트에서
       # 이미 겪은 실패다. 재생성 결과가 커밋본과 다르면 여기서 막는다.

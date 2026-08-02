@@ -28,6 +28,8 @@
     "hts:ch99": "tsx scripts/fetch-ch99.ts",
     "hts:301": "tsx scripts/fetch-301-lists.ts",
     "seed:301": "tsx scripts/seed-301.ts",
+    "sitemap:build": "tsx scripts/build-sitemap.ts",
+    "sitemap:verify": "tsx scripts/build-sitemap.ts --mode=verify",
     "blog:new": "tsx scripts/new-post.ts",
     "blog:build": "tsx scripts/build-blog.ts",
     "blog:verify": "tsx scripts/build-blog.ts --mode=verify",

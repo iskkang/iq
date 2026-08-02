@@ -180,6 +180,37 @@ if (existsSync(join(root, 'dist/blog.html'))) {
   }
 }
 
+// robots.txt · 사이트맵이 빠지면 색인이 느려지는 게 아니라 시작을 안 한다.
+// public/ 은 Vite 가 복사만 하므로 파일이 없어도 빌드는 조용히 성공한다.
+const robots = read('dist/robots.txt')
+if (robots === null) fail.push('dist/robots.txt 가 없다 (npm run sitemap:build)')
+else if (!robots.includes('Sitemap: https://www.landediq.app/sitemap.xml')) {
+  fail.push('dist/robots.txt: 사이트맵 인덱스를 가리키지 않는다')
+}
+
+const sitemapIndex = read('dist/sitemap.xml')
+const pagesMap = read('dist/sitemaps/pages.xml')
+if (sitemapIndex === null) fail.push('dist/sitemap.xml 이 없다 (npm run sitemap:build)')
+if (pagesMap === null) fail.push('dist/sitemaps/pages.xml 이 없다 (npm run sitemap:build)')
+else {
+  // 사이트맵은 canonical 에서 뽑는다. 손으로 관리하지 않는다는 규칙이 지켜지는지
+  // 확인하는 대신, 결과가 canonical 과 일치하는지를 본다.
+  for (const [f, loc] of [
+    ['dist/index.html', 'https://www.landediq.app/'],
+    ['dist/hts.html', 'https://www.landediq.app/hts'],
+    ['dist/blog.html', 'https://www.landediq.app/blog'],
+  ] as const) {
+    if (read(f) !== null && !pagesMap.includes(`<loc>${loc}</loc>`)) {
+      fail.push(`dist/sitemaps/pages.xml: ${loc} 가 빠졌다 — canonical 과 사이트맵이 갈라졌다`)
+    }
+  }
+  // 색인 대상이 아닌 화면이 들어가면 크롤 예산을 거기 쓴다
+  if (pagesMap.includes('landediq.app/app')) fail.push('dist/sitemaps/pages.xml: /app 이 들어 있다 — 색인 대상이 아니다')
+  if (existsSync(join(root, 'dist/blog')) && !/\/blog\/[a-z0-9-]+<\/loc>/.test(pagesMap)) {
+    fail.push('dist/sitemaps/pages.xml: 발행된 글이 하나도 없다')
+  }
+}
+
 if (fail.length > 0) {
   console.error('── 빌드 검사 실패 ───────────────────────────────')
   for (const f of fail) console.error('  ✗ ' + f)
