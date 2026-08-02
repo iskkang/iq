@@ -6,6 +6,37 @@
   <title>Free U.S. HTS duty lookup | LandedIQ</title>
   <meta name="description" content="Look up U.S. duty rates by HTS code, keyword, origin and effective date, with official-source data provenance." />
   <link rel="canonical" href="https://www.landediq.app/hts" />
+  <script>
+    /*
+     * 하위 경로(/hts/{code})는 폴백이다 — 색인 대상이 아니다.
+     *
+     * vercel.json 의 `/hts/(.*) → /hts` rewrite 때문에 모든 코드 경로가 이 파일을
+     * 받는다. 위 canonical 이 고정값이라 크롤러는 /hts/711319 를 /hts 의 중복으로
+     * 보고 합쳐 버린다 — 코드별 페이지가 색인되지 않는 진짜 원인이 이것이고,
+     * JS 렌더링 이전 단계에서 우리가 색인을 거부하고 있는 셈이다.
+     *
+     * 그래서 하위 경로에서는 canonical 을 자기 자신으로 돌리고 noindex 를 건다.
+     * 정적 생성된 코드 페이지가 생기면 Vercel 이 파일시스템을 먼저 보므로 그
+     * 코드는 이 파일에 오지 않는다 — 즉 여기 남는 것은 항상 "아직 발행하지 않은
+     * 코드" 뿐이고, 그건 색인되면 안 되는 페이지다.
+     *
+     * canonical 을 8 자리 부모로 돌리지 않는 이유: noindex 와 타 URL canonical 을
+     * 함께 주면 신호가 충돌하고, noindex 가 대상 페이지까지 전파될 수 있다.
+     * 발행된 8 자리 페이지를 그렇게 잃는 것이 여기서 가장 비싼 실패다.
+     *
+     * 정책: docs/seo-indexing-policy.md §6
+     */
+    (function () {
+      var p = location.pathname.replace(/\/+$/, '')
+      if (p === '/hts' || p === '') return
+      var link = document.querySelector('link[rel=canonical]')
+      if (link) link.href = location.origin + p
+      var meta = document.createElement('meta')
+      meta.name = 'robots'
+      meta.content = 'noindex,follow'
+      document.head.appendChild(meta)
+    })()
+  </script>
   <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18359222502"></script>
   <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','AW-18359222502')</script>
   <script src="/ads.js?v=3"></script>

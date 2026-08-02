@@ -141,12 +141,17 @@ function chipParts(applied: ReturnType<typeof computeShipment>['items'][number][
     })
 }
 
-/** 랜딩용 (Tailwind) */
+/**
+ * 랜딩용 (Tailwind).
+ *
+ * 랜딩이 다크 테마로 재설계되면서(dfa1be3) 밝은 배경용 톤은 대비가 깨졌다.
+ * 카드가 쓰는 색(border-white/5 · text-emerald-300)에 맞춘 값이다.
+ */
 const TW: Record<string, string> = {
-  mfn: 'bg-slate-100 text-slate-700',
-  china: 'bg-amber-100 text-amber-800',
-  fl: 'bg-rose-100 text-rose-800',
-  other: 'bg-slate-100 text-slate-700',
+  mfn: 'bg-white/10 text-slate-300',
+  china: 'bg-amber-400/10 text-amber-300',
+  fl: 'bg-rose-400/10 text-rose-300',
+  other: 'bg-white/10 text-slate-300',
 }
 function chipsTw(applied: Parameters<typeof chipParts>[0]) {
   return chipParts(applied)
@@ -160,216 +165,170 @@ function chipsCss(applied: Parameters<typeof chipParts>[0]) {
     .join('')
 }
 
-/** 랜딩 "What you get" 표에 넣을 행 수 */
+/** 랜딩 샘플 카드에 넣을 행 수 */
 const LANDING_ROWS = 3
 
+type LandingItems = ReturnType<typeof computeShipment>['items']
+
+/** 마커 사이를 갈아끼운다. 마커가 없으면 던진다 — 조용히 넘어가면 드리프트가 다시 시작된다. */
+function replaceBetween(src: string, name: string, body: string, indent: string): string {
+  const START = `<!-- ${name}:START -->`
+  const END = `<!-- ${name}:END -->`
+  const a = src.indexOf(START)
+  const b = src.indexOf(END)
+  if (a === -1 || b === -1) {
+    throw new Error(`index.html 에 ${name} 마커가 없다 — 랜딩을 동기화할 수 없다`)
+  }
+  return src.slice(0, a + START.length) + body + '\n' + indent + src.slice(b)
+}
+
+/** null 을 건너뛴 평균. 전부 null 이면 null. */
+function mean(values: Array<number | null>): number | null {
+  const ok = values.filter((v): v is number => v !== null)
+  return ok.length === 0 ? null : ok.reduce((s, v) => s + v, 0) / ok.length
+}
+
 /**
- * 랜딩(index.html)의 샘플 표를 같은 엔진 결과로 덮어쓴다.
+ * 랜딩(index.html)의 샘플 카드를 같은 엔진 결과로 덮어쓴다.
  *
  * 손으로 쓴 표는 반드시 드리프트한다 — 실제로 MFN 9.8%(존재하지 않는 라인)와
  * landed $3.29(3-SKU 기준 운임 배부)로 두 번 어긋났다. 랜딩과 리포트가 한 스크립트에서
  * 나오면 세율이 바뀌어도 재실행 한 번으로 둘 다 따라간다.
+ *
+ * **표와 요약 타일을 둘 다 생성한다.** 표만 묶어 뒀더니 위쪽 타일이 손으로 남아
+ * 다시 어긋났다 — 표가 3 행일 때 타일은 평균 마진 31.7% 를 적고 있었고 실제
+ * 행 평균은 그 값이 아니었다. 같은 숫자를 두 곳에서 관리하면 결과는 늘 같다.
  */
-function syncLandingTable(items: ReturnType<typeof computeShipment>['items']) {
+function syncLandingTable(items: LandingItems) {
   const path = join(root, 'index.html')
-  const src = readFileSync(path, 'utf-8')
-  const START = '<!-- SAMPLE_ROWS:START -->'
-  const END = '<!-- SAMPLE_ROWS:END -->'
-  const a = src.indexOf(START)
-  const b = src.indexOf(END)
-  if (a === -1 || b === -1) throw new Error('index.html 에 SAMPLE_ROWS 마커가 없다 — 랜딩 표를 동기화할 수 없다')
+  let out = readFileSync(path, 'utf-8')
 
   const rows = items
     .map(
       (x) => `
-            <tr>
+            <tr class="border-t border-white/5">
               <td class="px-4 py-3 text-left font-medium">${esc(x.sku)}</td>
               <td class="px-4 py-3 text-left">${chipsTw(x.applied_programs)}</td>
-              <td class="px-4 py-3 font-semibold">${un(x.landed_cost, (n) => fmtUsd(round2(n)))}</td>
-              <td class="px-4 py-3 text-emerald-600">${fmtPct(x.true_margin)}</td>
-              <td class="px-4 py-3">${x.recommended_price !== null ? fmtUsd(round2(x.recommended_price)) : '—'}</td>
+              <td class="px-4 py-3 text-right font-semibold">${un(x.landed_cost, (n) => fmtUsd(round2(n)))}</td>
+              <td class="px-4 py-3 text-right text-emerald-300">${fmtPct(x.true_margin)}</td>
+              <td class="px-4 py-3 text-right">${x.recommended_price !== null ? fmtUsd(round2(x.recommended_price)) : '—'}</td>
             </tr>`,
     )
     .join('')
+  out = replaceBetween(out, 'SAMPLE_ROWS', rows, '          ')
 
-  let out = src.slice(0, a + START.length) + rows + '\n          ' + src.slice(b)
+  const avgLanded = mean(items.map((x) => x.landed_cost))
+  const avgMargin = mean(items.map((x) => x.true_margin))
+  const avgPrice = mean(items.map((x) => x.recommended_price))
+  const tiles = [
+    { label: 'Avg. landed cost', tone: '', value: avgLanded === null ? '—' : fmtUsd(round2(avgLanded)) },
+    { label: 'Avg. true margin', tone: ' text-amber-300', value: fmtPct(avgMargin) },
+    { label: 'Avg. recommended price', tone: ' text-emerald-300', value: avgPrice === null ? '—' : fmtUsd(round2(avgPrice)) },
+  ]
+    .map(
+      (t) => `
+            <div class="rounded-xl bg-white/[.04] p-4"><p class="text-xs text-slate-500">${t.label}</p><p class="mt-3 text-xl font-bold${t.tone}">${t.value}</p></div>`,
+    )
+    .join('')
+  out = replaceBetween(out, 'SAMPLE_TILES', tiles, '          ')
 
-  // 기준일 캡션도 함께 맞춘다 (원산지 라벨은 손으로 관리)
+  // 기준일 캡션과 SKU 건수도 함께 맞춘다 (원산지 라벨은 손으로 관리)
   out = out.replace(/rates as of \d{4}-\d{2}-\d{2}/g, `rates as of ${AS_OF}`)
+  out = out.replace(/China imports · \d+ SKUs/g, `China imports · ${items.length} SKUs`)
 
   writeFileSync(path, out, 'utf-8')
-  console.log(`→ index.html 샘플 표 ${items.length}행 동기화`)
+  console.log(`→ index.html 샘플 카드 ${items.length}행 + 요약 타일 동기화`)
+}
+
+/** 리포트 표기: 10% 를 "10.0%" 로 쓰지 않는다. 페이지가 쓰던 표기를 그대로 따른다. */
+function pctTrim(rate: number | null): string {
+  return fmtPct(rate).replace(/\.0%$/, '%')
+}
+
+/** 적용된 레이어의 종가세 합계. Layer 1 의 "Total duty" 칸. */
+function totalDutyRate(applied: Parameters<typeof chipParts>[0]): number {
+  return applied.reduce((s, a) => s + a.applied_rate, 0)
+}
+
+/**
+ * 샘플 리포트(sample-report.html)의 숫자를 엔진 결과로 덮어쓴다.
+ *
+ * ── 왜 페이지 전체를 찍지 않는가 ────────────────────────────────
+ * 예전에는 이 스크립트가 sample-report.html 을 통째로 생성했다. 그런데 페이지가
+ * 네 커밋에 걸쳐 손으로 재설계되면서(ec90b57 → 4f250ef) 생성기만 뒤에 남았고,
+ * 그때부터 재실행은 개선을 되돌리는 일이 됐다 — ads.js 전환 태그가 빠지고
+ * 폐기한 CTA 문구가 되살아난다. 그래서 아무도 돌리지 않았고, 표는 손으로
+ * 관리됐다.
+ *
+ * 그 사이 실제로 어긋났다: Layer 1 은 BACKPACK-01 관세를 42.6%, TSHIRT-01 을
+ * 24% 로 적고 있었는데, **같은 페이지 Layer 2 의 금액**은 강제노동 301 12.5% 가
+ * 포함된 값이었다. 한 페이지가 자기 자신과 모순된 상태로 공개돼 있었다.
+ *
+ * 그래서 소유권을 나눈다 — **디자인은 페이지가, 숫자는 엔진이.** 생성기는 마커
+ * 안만 채우므로 재설계가 다시 와도 생성기가 뒤처지지 않는다.
+ */
+function syncSampleReport(items: LandingItems) {
+  const path = join(root, 'sample-report.html')
+  let out = readFileSync(path, 'utf-8')
+
+  // 선적가액은 결과(SkuResult)가 아니라 입력에서 낸다 — 결과에는 수량이 없다
+  const shipmentValue = ITEMS.reduce((s, i) => s + i.unit_cost_usd * i.units_per_shipment, 0)
+  const meta = [
+    `Illustrative rates as of <b>${AS_OF}</b>`,
+    `Shipment value <b>${fmtUsd(round2(shipmentValue))}</b>`,
+    `Freight + insurance <b>${fmtUsd(round2(SHIP.freight_usd + SHIP.insurance_usd))}</b>`,
+    `Target margin <b>${pctTrim(SHIP.target_margin)}</b>`,
+    `Channel fee <b>${pctTrim(SHIP.channel_fee_pct)}</b>`,
+  ]
+    .map((d) => `<div>${d}</div>`)
+    .join('')
+  out = replaceBetween(out, 'REPORT_META', meta, '')
+
+  const l1 = items
+    .map(
+      (x) =>
+        `<tr><td class="l strong">${esc(x.sku)}</td><td class="l">${formatHts(x.hts_code)}</td>` +
+        `<td class="l">${chipsCss(x.applied_programs)}</td><td>${pctTrim(totalDutyRate(x.applied_programs))}</td></tr>`,
+    )
+    .join('')
+  out = replaceBetween(out, 'REPORT_L1', l1, '')
+
+  const l2 = items
+    .map(
+      (x) =>
+        `<tr><td class="l strong">${esc(x.sku)}</td><td>${fmtUsd(round2(x.unit_cost))}</td>` +
+        `<td>${un(x.duty_usd, (n) => fmtUsd(round2(n)))}</td><td>${fmtUsd(round2(x.fees_per_unit))}</td>` +
+        `<td>${fmtUsd(round2(x.freight_per_unit))}</td>` +
+        `<td class="strong">${un(x.landed_cost, (n) => fmtUsd(round2(n)))}</td></tr>`,
+    )
+    .join('')
+  out = replaceBetween(out, 'REPORT_L2', l2, '')
+
+  const l3 = items
+    .map((x) => {
+      const neg = x.true_margin !== null && x.true_margin < 0.25
+      return (
+        `<tr><td class="l strong">${esc(x.sku)}</td>` +
+        `<td>${x.current_price !== null ? fmtUsd(round2(x.current_price)) : '—'}</td>` +
+        `<td class="${neg ? 'warn' : 'ok'}">${fmtPct(x.true_margin)}</td>` +
+        `<td>${x.recommended_price !== null ? fmtUsd(round2(x.recommended_price)) : '—'}</td></tr>`
+      )
+    })
+    .join('')
+  out = replaceBetween(out, 'REPORT_L3', l3, '')
+
+  // §1-2 estimates-only 는 src/lib/disclaimer.ts 가 단일 소스다. 재설계 과정에서
+  // 리포트 블록이 통째로 빠지고 푸터 축약본만 남아 있었다 — 여기서 다시 주입한다.
+  out = replaceBetween(out, 'REPORT_DISCLAIMER', esc(DISCLAIMER_EN), '')
+
+  writeFileSync(path, out, 'utf-8')
+  console.log(`→ sample-report.html 3개 레이어 표 ${items.length}행 동기화`)
 }
 
 function main() {
   const r = computeShipment(SHIP, ITEMS, LEDGER, FEES, CTX)
 
-  const rows = r.items
-    .map((x) => {
-      const neg = x.true_margin !== null && x.true_margin < 0.25
-      return `      <tr>
-        <td class="l b">${esc(x.sku)}</td>
-        <td class="l mono">${formatHts(x.hts_code)}</td>
-        <td class="l">${chipsCss(x.applied_programs)}</td>
-        <td>${fmtUsd(round2(x.unit_cost))}</td>
-        <td>${un(x.duty_usd, (n) => fmtUsd(round2(n)))}</td>
-        <td>${fmtUsd(round2(x.fees_per_unit))}</td>
-        <td>${fmtUsd(round2(x.freight_per_unit))}</td>
-        <td class="b">${un(x.landed_cost, (n) => fmtUsd(round2(n)))}</td>
-        <td>${x.current_price !== null ? fmtUsd(round2(x.current_price)) : '—'}</td>
-        <td class="${neg ? 'warn' : 'ok'}">${fmtPct(x.true_margin)}</td>
-        <td>${x.recommended_price !== null ? fmtUsd(round2(x.recommended_price)) : '—'}</td>
-      </tr>`
-    })
-    .join('\n')
-
-  const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>LandedIQ — Sample landed cost report</title>
-<link rel="canonical" href="https://www.landediq.app/sample-report.html" />
-<!-- Google tag (gtag.js) — Google Ads 전환 추적. 페이지당 한 번만. -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=AW-18359222502"></script>
-<script>
-  window.dataLayer = window.dataLayer || []; function gtag(){ dataLayer.push(arguments) }
-  gtag('js', new Date()); gtag('config', 'AW-18359222502')
-</script>
-<!-- 진입 자체를 이벤트로 남긴다 — 리포트 열람 대비 가입 전환을 볼 수 있어야 한다 -->
-<script defer data-domain="landediq.app" src="https://plausible.io/js/script.js"></script>
-<script>
-  // 랜딩과 **같은 출처**를 쓴다. Vite 가 빌드 시 VITE_ 접두 변수를 치환한다.
-  var CONFIG = { SUPABASE_URL: '%VITE_SUPABASE_URL%', SUPABASE_ANON_KEY: '%VITE_SUPABASE_ANON_KEY%' }
-</script>
-<style>
-  *{box-sizing:border-box} body{margin:0;padding:32px 20px;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#0f172a;background:#f8fafc}
-  .wrap{max-width:1000px;margin:0 auto}
-  h1{font-size:22px;margin:0 0 4px} .sub{color:#64748b;font-size:13px;margin:0 0 20px}
-  .meta{display:flex;flex-wrap:wrap;gap:16px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin-bottom:18px;font-size:13px}
-  .meta div{color:#475569} .meta b{color:#0f172a}
-  .scroll{overflow-x:auto;border:1px solid #e2e8f0;border-radius:10px;background:#fff}
-  table{width:100%;min-width:900px;border-collapse:collapse;text-align:right;font-size:13px}
-  th{background:#f8fafc;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;text-align:right;font-weight:600}
-  th.l,td.l{text-align:left} td{padding:10px 12px;border-top:1px solid #f1f5f9}
-  .b{font-weight:600} .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .small{font-size:12px;color:#475569} .ok{color:#059669} .warn{color:#d97706;font-weight:600}
-  .note{margin-top:16px;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e}
-  footer{margin-top:22px;color:#94a3b8;font-size:11px;line-height:1.6}
-  .chip{display:inline-block;white-space:nowrap;margin:1px 3px 1px 0;padding:2px 6px;border-radius:5px;font-size:11px;font-weight:600}
-  .chip-mfn{background:#f1f5f9;color:#334155} .chip-china{background:#fef3c7;color:#92400e}
-  .chip-fl{background:#ffe4e6;color:#9f1239} .chip-other{background:#f1f5f9;color:#334155}
-  .cta{margin-top:26px;padding:20px;background:#fff;border:1px solid #e2e8f0;border-radius:10px}
-  .cta h2{font-size:17px;margin:0 0 4px} .cta p{margin:0 0 12px;font-size:13px;color:#475569}
-  .cta form{display:flex;gap:8px;flex-wrap:wrap}
-  .cta input[type=email]{flex:1 1 240px;padding:10px 12px;font-size:14px;border:1px solid #cbd5e1;border-radius:8px}
-  .cta button{padding:10px 18px;font-size:14px;font-weight:600;color:#fff;background:#4f46e5;border:0;border-radius:8px;cursor:pointer}
-  .cta button:disabled{opacity:.5;cursor:default}
-  .note-sm{margin-top:8px !important;font-size:11px;color:#94a3b8}
-  .done{margin-top:12px;padding:10px 12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;color:#065f46;font-weight:600;font-size:13px}
-  @media print{body{background:#fff;padding:0} .scroll{border:none} .cta{display:none}}
-</style></head><body><div class="wrap">
-  <h1>Sample landed cost report</h1>
-  <p class="sub">This is the real report format — generated by the LandedIQ calculation engine, not a mock-up.</p>
-
-  <div class="meta">
-    <div>Rates as of <b>${AS_OF}</b></div>
-    <div>Shipment value <b>${fmtUsd(round2(r.totals.total_value))}</b></div>
-    <div>Freight + insurance <b>${fmtUsd(round2(r.totals.freight_pool))}</b></div>
-    <div>MPF <b>${fmtUsd(round2(r.totals.mpf_shipment))}</b></div>
-    <div>HMF <b>${fmtUsd(round2(r.totals.hmf_shipment))}</b></div>
-    <div>Allocation <b>${r.totals.allocation_basis_used}</b></div>
-    ${r.totals.unresolved_skus > 0 ? `<div class="warn">Totals exclude <b>${r.totals.unresolved_skus}</b> unresolved SKU(s)</div>` : ''}
-    <div>Target margin <b>${fmtPct(SHIP.target_margin, 0)}</b> · channel fee <b>${fmtPct(SHIP.channel_fee_pct, 0)}</b></div>
-  </div>
-
-  <div class="scroll"><table>
-    <thead><tr>
-      <th class="l">SKU</th><th class="l">HTS</th><th class="l">Duty breakdown</th>
-      <th>Unit cost</th><th>Duty</th><th>Fees</th><th>Freight</th>
-      <th>Landed cost</th><th>Current price</th><th>True margin</th><th>Recommended</th>
-    </tr></thead>
-    <tbody>
-${rows}
-    </tbody>
-  </table></div>
-
-  <p class="note"><b>Duty programs shown:</b> base MFN (USITC official schedule) and the Section 301 forced-labor
-  tariffs effective 2026-07-24. Programs that have ended — the IEEPA tariffs struck down in February 2026 and the
-  Section 122 surcharge that expired 2026-07-24 — are excluded automatically by their effective dates.
-  All five SKUs are China origin. The Section 301 result differs by 8-digit line, which is the point:
-  backpacks (4202.92.31) are on List 3 at +25%, t-shirts (6109.10.00) on List 4A at +7.5%, while mugs
-  (6912.00.44), stainless kitchenware (7323.93.00) and vacuum flasks (9617.00.10) appear only on
-  List&nbsp;4B &mdash; which the tariff schedule itself marks <b>suspended</b>, so no China 301 applies.
-  Same country, same shipment: 22.5% to 55.1% depending on the 8-digit code.</p>
-
-  <section class="cta">
-    <h2>Want this for your own SKUs?</h2>
-    <p>Upload one CSV and get the same report for every product you import. Free during early access.</p>
-    <form id="cta-form" autocomplete="on">
-      <input type="email" name="email" required placeholder="you@yourstore.com" aria-label="Email" />
-      <!-- 봇 함정. 채워져 오면 제출을 버린다 -->
-      <input type="text" name="company" tabindex="-1" autocomplete="off" aria-hidden="true"
-        style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
-      <button type="submit">Get early access</button>
-    </form>
-    <p id="cta-note" class="note-sm">No credit card. We'll email you when your workspace is ready.</p>
-  </section>
-
-  <footer>
-    ${esc(DISCLAIMER_EN)}<br />
-    © 2026 LandedIQ · Tip: use your browser's Print → Save as PDF to keep a copy.
-  </footer>
-</div>
-<script>
-  // 진입 기록. 리포트를 본 사람 중 몇 %가 가입하는지가 이 페이지의 지표다.
-  window.plausible && window.plausible('sample_report_view')
-  document.addEventListener('DOMContentLoaded', function () {
-    var f = document.getElementById('cta-form'), note = document.getElementById('cta-note')
-    if (!f) return
-    var p = new URLSearchParams(location.search)
-    var UTM = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']
-    f.addEventListener('submit', async function (e) {
-      e.preventDefault()
-      var btn = f.querySelector('button'), trap = f.querySelector('input[name=company]')
-      var done = function () {
-        var d = document.createElement('p'); d.className = 'done'
-        d.textContent = "You're in line — we're onboarding new stores this week"
-        f.replaceWith(d); if (note) note.remove()
-      }
-      if (trap && trap.value) return done() // 봇: 성공한 척하고 버린다
-      btn.disabled = true
-      var body = { email: f.querySelector('input[type=email]').value, intent: 'sample_report_page', page: location.pathname }
-      UTM.forEach(function (k) { body[k] = p.get(k) || null })
-      try {
-        if (!CONFIG.SUPABASE_URL || CONFIG.SUPABASE_URL.indexOf('%VITE_') === 0) throw new Error('env not injected')
-        var res = await fetch(CONFIG.SUPABASE_URL + '/rest/v1/leads', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json', apikey: CONFIG.SUPABASE_ANON_KEY,
-            Authorization: 'Bearer ' + CONFIG.SUPABASE_ANON_KEY, Prefer: 'return=minimal',
-          },
-          body: JSON.stringify(body),
-        })
-        if (res.status !== 409 && !res.ok) throw new Error('leads ' + res.status)
-        window.plausible && window.plausible('email_signup', { props: { intent: 'sample_report_page', utm_source: p.get('utm_source') || '' } })
-        // 라벨이 오면 send_to 를 AW-18359222502/<label> 로 바꾼다
-        if (typeof window.gtag === 'function') window.gtag('event', 'conversion', { send_to: 'AW-18359222502' })
-        done()
-      } catch (err) {
-        btn.disabled = false
-        if (note) { note.textContent = 'Something went wrong — please try again.'; note.style.color = '#e11d48' }
-      }
-    })
-  })
-</script>
-</body></html>
-`
-
-  // **public/ 이 아니라 루트에 쓴다.** public/ 은 Vite 가 그대로 복사만 하므로
-  // %VITE_*% 가 치환되지 않는다 — 그러면 이 페이지의 폼이 쓸 anon 키를 여기에
-  // 하드코딩해야 하고, 랜딩·앱과 자격증명이 또 두 벌이 된다. 빌드 입력으로 잡아
-  // 출처를 하나로 유지한다 (vite.config.ts 의 rollupOptions.input 참조).
-  writeFileSync(join(root, 'sample-report.html'), html, 'utf-8')
-
+  syncSampleReport(r.items)
   syncLandingTable(r.items.slice(0, LANDING_ROWS))
 
   // refresh 에서만 fixture 를 갱신한다. verify 는 읽기만 한다 —

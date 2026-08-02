@@ -4,6 +4,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { DISCLAIMER_EN } from '../src/lib/disclaimer'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const fail: string[] = []
@@ -107,6 +108,27 @@ if (appHtml !== null) {
 const landing = read('dist/index.html')
 if (landing !== null) {
   for (const w of ['demo mode', 'browser memory', 'DEMO MODE']) if (landing.includes(w)) fail.push(`dist/index.html: 사용자 노출 문구 "${w}"`)
+  // 랜딩 샘플 카드는 엔진이 채운다. 마커가 사라지면 sample:verify 가 죽는데,
+  // 실제로 랜딩 재설계 때 사라진 채 8 커밋을 갔다 — 그동안 표는 손으로 관리됐고
+  // 요약 타일 두 개가 어긋나 있었다. 마커 자체를 빌드에서 지킨다.
+  for (const m of ['SAMPLE_ROWS:START', 'SAMPLE_ROWS:END', 'SAMPLE_TILES:START', 'SAMPLE_TILES:END']) {
+    if (!landing.includes(m)) fail.push(`dist/index.html: ${m} 마커가 없다 — 샘플 카드가 엔진과 끊긴다`)
+  }
+}
+
+// /hts 하위 경로는 폴백이라 색인 대상이 아니다. 이 가드가 빠지면 고정 canonical 이
+// 다시 모든 코드 경로를 /hts 로 합친다 (docs/seo-indexing-policy.md §6).
+const htsPage = read('dist/hts.html')
+if (htsPage !== null && !/noindex,follow/.test(htsPage)) {
+  fail.push('dist/hts.html: 하위 경로 noindex 가드가 없다 — 코드 경로가 /hts 로 합쳐진다')
+}
+
+// 샘플 리포트는 §1-2 estimates-only 고지를 그대로 실어야 한다. 재설계 과정에서
+// 이 블록이 통째로 빠지고 푸터 축약본만 남은 적이 있다 — 축약본은 "세액은 원장
+// 스냅샷 기준 추정" 을 말하지 않아 같은 고지가 아니다.
+const report = read('dist/sample-report.html')
+if (report !== null && !report.includes(DISCLAIMER_EN)) {
+  fail.push('dist/sample-report.html: §1-2 estimates-only 고지가 없다 (src/lib/disclaimer.ts 단일 소스)')
 }
 
 if (fail.length > 0) {
