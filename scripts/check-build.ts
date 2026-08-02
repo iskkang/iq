@@ -97,6 +97,38 @@ for (const f of PUBLIC_HTML) {
   for (const st of STALE) if (html.includes(st)) fail.push(`${f}: 폐기한 가격/CTA/주소 문구 "${st}" 가 남아 있다`)
 }
 
+/**
+ * ── head 의 태그가 실제로 닫혔는가 · 공유 카드가 있는가 ──────────────
+ * 이 가드는 실제 사고에서 나왔다. og 태그를 canonical 뒤에 끼워 넣는 스크립트가
+ * `<link rel="canonical" href="…"` 까지만 매칭해서, 닫는 ` />` 앞에 태그를
+ * 밀어 넣었다. 결과는 9 개 페이지 전부에서 canonical 이 닫히지 않고 본문 맨 위에
+ * `/>` 가 글자로 찍히는 것이었다 — canonical 이 깨지면 색인이 통째로 어긋난다.
+ *
+ * 무서운 건 **아무것도 못 잡았다는 것**이다. 빌드 검사·252 개 테스트·브라우저
+ * 퍼널 스모크가 전부 통과했다. 브라우저는 깨진 HTML 을 복구해서 렌더하므로
+ * 스모크는 이벤트만 보고 넘어간다. 눈으로 스크린샷을 보고서야 발견했다.
+ *
+ * og:image 도 같이 본다. 없으면 링크를 붙였을 때 이미지 없는 맨 텍스트 카드가
+ * 뜨고, 그건 조용히 "실체 없는 사이트" 로 읽힌다 — 역시 아무 검사도 안 하던 곳이다.
+ */
+for (const f of [...PUBLIC_HTML, 'dist/blog.html']) {
+  const html = read(f)
+  if (html === null) continue
+  const head = html.slice(0, html.indexOf('</head>'))
+
+  // 여는 꺾쇠 뒤에 닫는 꺾쇠보다 다음 여는 꺾쇠가 먼저 오면 그 태그는 닫히지 않았다.
+  const unclosed = /<(link|meta)\b[^>]*$/m.test(head.replace(/>[^<]*/g, '>'))
+  if (unclosed) fail.push(`${f}: head 안에 닫히지 않은 link/meta 태그가 있다`)
+
+  const canonical = head.match(/<link rel="canonical"[^>]*>/)
+  if (!canonical) fail.push(`${f}: canonical 링크가 없다`)
+  else if (!canonical[0].trimEnd().endsWith('/>')) fail.push(`${f}: canonical 링크가 닫히지 않았다`)
+
+  if (!/<meta property="og:image" content="https:\/\/[^"]+"/.test(head)) {
+    fail.push(`${f}: og:image 가 없다 — 링크 공유 시 이미지 없는 카드가 뜬다`)
+  }
+}
+
 const appHtml = read('dist/app/index.html')
 if (appHtml !== null) {
   const m = appHtml.match(/\/assets\/[A-Za-z0-9._-]+\.js/)
