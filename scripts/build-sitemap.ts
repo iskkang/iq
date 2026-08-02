@@ -74,6 +74,23 @@ function main() {
   mkdirSync(SITEMAP_DIR, { recursive: true })
   writeFileSync(join(SITEMAP_DIR, 'pages.xml'), urlsetXml(entries), 'utf-8')
 
+  // 코드 페이지는 장(chapter) 별로 쪼갠다 (§6). 크기 때문이 아니라 진단 가능성
+  // 때문이다 — 한 덩어리면 Search Console 에서 색인률이 전체 평균으로만 보이고,
+  // 어느 영역이 실패하는지 알 수 없다. 그 신호가 웨이브 게이트의 입력이다.
+  const wave = join(root, 'data/wave1.json')
+  let codePages = 0
+  if (existsSync(wave)) {
+    const byChapter = new Map<string, SitemapEntry[]>()
+    for (const c of (JSON.parse(readFileSync(wave, 'utf-8')) as { codes: Array<{ code: string }> }).codes) {
+      const ch = c.code.slice(0, 2)
+      byChapter.set(ch, [...(byChapter.get(ch) ?? []), { loc: `${ORIGIN}/hts/${c.code}` }])
+    }
+    for (const [ch, list] of byChapter) {
+      writeFileSync(join(SITEMAP_DIR, `hts-ch${ch}.xml`), urlsetXml(list), 'utf-8')
+      codePages += list.length
+    }
+  }
+
   // 인덱스는 디렉터리를 그대로 읽는다 — 코드 페이지 장별 사이트맵이 생기면
   // 이 파일을 고치지 않아도 자동으로 들어온다 (§6)
   const maps = readdirSync(SITEMAP_DIR).filter((f) => f.endsWith('.xml')).map((f) => `/sitemaps/${f}`)
@@ -86,6 +103,7 @@ function main() {
     console.log(`    ${e.loc}${e.lastmod ? `  (${e.lastmod})` : ''}`)
   }
   if (skipped.length > 0) console.log(`  제외 ${skipped.length}건: ${skipped.join(', ')}`)
+  console.log(codePages > 0 ? `  코드 페이지 ${codePages}장 (장별 분할)` : '  코드 페이지 없음 — 웨이브 미발행')
   console.log(`  인덱스 ${maps.length}개: ${maps.join(', ')}`)
   console.log('→ public/robots.txt · public/sitemap.xml · public/sitemaps/pages.xml — 커밋할 것')
 }

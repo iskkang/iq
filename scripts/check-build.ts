@@ -211,6 +211,22 @@ else {
   }
 }
 
+// 웨이브 파일은 "무엇을 발행하기로 했는가" 이고 dist/hts 는 "무엇이 발행됐는가" 다.
+// 둘이 어긋나면 사이트맵에는 있는데 페이지는 없는(또는 그 반대) 상태가 배포된다 —
+// 크롤러에게 404 를 주는 URL 을 우리가 직접 제출하는 꼴이다.
+const waveFile = join(root, 'data/wave1.json')
+if (existsSync(waveFile)) {
+  const wave = JSON.parse(readFileSync(waveFile, 'utf-8')) as { codes: Array<{ code: string }> }
+  const dir = join(root, 'dist/hts')
+  const built = existsSync(dir) ? new Set(readdirSync(dir).filter((f) => f.endsWith('.html')).map((f) => f.replace(/\.html$/, ''))) : new Set<string>()
+  const missing = wave.codes.map((c) => c.code).filter((c) => !built.has(c))
+  if (missing.length > 0) {
+    fail.push(`dist/hts: 웨이브 ${wave.codes.length}개 중 ${missing.length}개가 발행되지 않았다 (${missing.slice(0, 3).join(', ')}…)`)
+  }
+  const sm = read(`dist/sitemaps/hts-ch${wave.codes[0]?.code.slice(0, 2)}.xml`)
+  if (wave.codes.length > 0 && sm === null) fail.push('dist/sitemaps: 장별 코드 사이트맵이 없다 (npm run sitemap:build)')
+}
+
 if (fail.length > 0) {
   console.error('── 빌드 검사 실패 ───────────────────────────────')
   for (const f of fail) console.error('  ✗ ' + f)
