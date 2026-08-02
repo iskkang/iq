@@ -1,7 +1,7 @@
 /**
  * 빌드 산출물 검사 — 조용히 깨진 채로 배포되는 걸 막는다.
  */
-import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { DISCLAIMER_EN } from '../src/lib/disclaimer'
@@ -126,6 +126,26 @@ for (const f of [...PUBLIC_HTML, 'dist/blog.html']) {
 
   if (!/<meta property="og:image" content="https:\/\/[^"]+"/.test(head)) {
     fail.push(`${f}: og:image 가 없다 — 링크 공유 시 이미지 없는 카드가 뜬다`)
+  }
+}
+
+/**
+ * ── 히어로 사진의 무게 ────────────────────────────────────────────
+ * 세 장 다 히어로 배경이라 LCP 를 직접 문다. 원본은 PNG 로 합쳐 2.4 MB 였고
+ * 그대로 썼으면 광고로 들어온 사람이 첫 화면을 기다렸을 것이다. WebP 로
+ * 107 KB 가 됐는데, 나중에 누가 원본을 덮어써도 아무도 모른다 — 페이지는
+ * 여전히 "동작" 하기 때문이다. 예산을 넘으면 여기서 막는다.
+ */
+const PHOTO_BUDGET_KB = 120
+for (const name of ['terminal', 'operations', 'layers']) {
+  const p = join(root, `dist/photo/${name}.webp`)
+  if (!existsSync(p)) {
+    fail.push(`dist/photo/${name}.webp 가 없다 — 히어로 배경이 빈 채로 배포된다`)
+    continue
+  }
+  const kb = statSync(p).size / 1024
+  if (kb > PHOTO_BUDGET_KB) {
+    fail.push(`dist/photo/${name}.webp 가 ${kb.toFixed(0)} KB — 예산 ${PHOTO_BUDGET_KB} KB 초과 (npm run photo:build 로 다시 만들 것)`)
   }
 }
 
