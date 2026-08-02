@@ -32,6 +32,23 @@ const ORIGIN = 'https://www.landediq.app'
 const MIN_CODES = 5
 const MAX_CODES = 15
 
+/**
+ * ── 주 5 편에서 무너지는 지점 ────────────────────────────────────
+ * 빈도 자체는 문제가 아니다. 문제는 **빈도 × 템플릿 획일성 × 얇은 본문**이다.
+ * 260 편/년이 같은 틀에 같은 길이로 나가면, 에디토리얼은 프로그래매틱 코퍼스의
+ * 균형추(사람이 쓴 글)이기를 그만두고 그 코퍼스에 섞여 대량 생성 신호가 된다.
+ * 그러면 백링크도 안 오고 도메인 평가만 깎인다 — 두 배로 지는 길이다.
+ *
+ * 그 실패는 조용하다. 얇은 글도 발행되고 배포되고 아무도 막지 않는다. 그래서
+ * 아래 셋을 빌드에서 본다. 속도를 올리는 대신 바닥을 만든다.
+ */
+const MIN_BODY_WORDS = 300
+/** 최근 몇 편 안에서 같은 코드를 다시 쓰지 않는가 */
+const RECENT_WINDOW = 10
+const MAX_CODE_REUSE = 2
+/** 스캐폴드가 남긴 자리표시자. 채우지 않으면 발행되지 않는다 */
+const PLACEHOLDER = /\bTODO\b/
+
 interface Post {
   title: string
   slug: string
@@ -112,6 +129,20 @@ function parsePost(file: string): Post {
 
   const body = m[2].trim()
   if (body === '') fail(file, '본문이 비어 있다')
+
+  // 얇은 글은 주 5 편에서 가장 먼저 나타나는 실패다. 발행은 되고 아무도 안 막는다
+  const words = body.split(/\s+/).filter(Boolean).length
+  if (words < MIN_BODY_WORDS) {
+    fail(file, `본문이 ${words}단어다 — 최소 ${MIN_BODY_WORDS}단어. 짧게 쓸 거면 그 주에 안 내는 게 낫다 (정책 §8)`)
+  }
+
+  // 스캐폴드가 채워두고 간 자리를 그대로 발행하면 자동 생성물이 그대로 나간다.
+  // 사실 층은 유도값이라 사람이 손댈 곳이 없으므로, **의견은 사람이 썼다는 것**이
+  // 이 파이프라인에서 유일하게 남은 사람의 흔적이다. 비어 있으면 막는다.
+  for (const k of ['title', 'dek', 'take', 'question'] as const) {
+    if (PLACEHOLDER.test(String(meta[k] ?? ''))) fail(file, `${k} 에 TODO 가 남아 있다 — 스캐폴드를 채우지 않았다`)
+  }
+  if (PLACEHOLDER.test(body)) fail(file, '본문에 TODO 가 남아 있다')
 
   return {
     title: need('title'),
@@ -279,6 +310,46 @@ function renderIndex(posts: Post[]): string {
 ${FOOT}`
 }
 
+/**
+ * 편수가 늘 때만 나타나는 실패를 본다.
+ *
+ * 한 편만 놓고 보면 멀쩡한 글도, 스무 편을 늘어놓으면 같은 코드에 같은 문장으로
+ * 같은 말을 하고 있는 게 보인다. 그게 대량 생성물의 모양이다. 주 1 편에서는
+ * 사람이 알아서 피하지만 주 5 편에서는 못 피한다 — 그래서 기계가 본다.
+ *
+ * posts 는 최신순으로 정렬돼 들어온다.
+ */
+function assertNotRepetitive(posts: Post[]): void {
+  const problems: string[] = []
+
+  // 같은 코드를 최근 창 안에서 반복하면 주제가 아니라 코드를 돌려쓰는 것이다
+  const recent = posts.slice(0, RECENT_WINDOW)
+  const used = new Map<string, string[]>()
+  for (const p of recent) for (const c of p.codes) used.set(c, [...(used.get(c) ?? []), p.slug])
+  for (const [code, slugsFor] of used) {
+    if (slugsFor.length > MAX_CODE_REUSE) {
+      problems.push(`코드 ${code} 가 최근 ${recent.length}편 중 ${slugsFor.length}편에 나온다 (상한 ${MAX_CODE_REUSE}): ${slugsFor.join(', ')}`)
+    }
+  }
+
+  // 문장을 그대로 재사용하면 템플릿이다. 사람이 매번 새로 생각했는지의 대리 지표다
+  for (const field of ['title', 'dek', 'take', 'question'] as const) {
+    const seenText = new Map<string, string>()
+    for (const p of posts) {
+      const key = p[field].trim().toLowerCase()
+      const prev = seenText.get(key)
+      if (prev) problems.push(`${field} 가 ${prev} 와 글자 그대로 같다: ${p.slug}`)
+      else seenText.set(key, p.slug)
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error(
+      ['에디토리얼이 반복적이다 — 주 5편에서 가장 먼저 무너지는 지점이다 (정책 §8)', ...problems.map((p) => `  ✗ ${p}`)].join('\n'),
+    )
+  }
+}
+
 function main() {
   if (!existsSync(SRC)) throw new Error(`${SRC} 가 없다`)
   const lists = JSON.parse(readFileSync(LISTS, 'utf-8')) as ListFile
@@ -289,6 +360,7 @@ function main() {
   const posts = files.map(parsePost).sort((a, b) => (a.date < b.date ? 1 : -1))
   const slugs = new Set(posts.map((p) => p.slug))
   if (slugs.size !== posts.length) throw new Error('slug 가 중복이다')
+  assertNotRepetitive(posts)
 
   mkdirSync(OUT_DIR, { recursive: true })
   const written: string[] = []

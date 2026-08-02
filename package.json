@@ -28,6 +28,7 @@
     "hts:ch99": "tsx scripts/fetch-ch99.ts",
     "hts:301": "tsx scripts/fetch-301-lists.ts",
     "seed:301": "tsx scripts/seed-301.ts",
+    "blog:new": "tsx scripts/new-post.ts",
     "blog:build": "tsx scripts/build-blog.ts",
     "blog:verify": "tsx scripts/build-blog.ts --mode=verify",
     "sample:build": "tsx scripts/build-sample-report.ts",
