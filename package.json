@@ -38,7 +38,8 @@
     "sample:verify": "tsx scripts/build-sample-report.ts --mode=verify",
     "sample:check-inputs": "tsx scripts/check-sample-inputs.ts",
     "demo:record": "tsx scripts/record-demo.ts",
-    "og:build": "node scripts/build-og-image.mjs"
+    "og:build": "node scripts/build-og-image.mjs",
+    "photo:build": "node scripts/build-photos.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
