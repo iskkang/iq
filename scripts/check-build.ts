@@ -137,7 +137,7 @@ for (const f of [...PUBLIC_HTML, 'dist/blog.html']) {
  * 여전히 "동작" 하기 때문이다. 예산을 넘으면 여기서 막는다.
  */
 const PHOTO_BUDGET_KB = 120
-for (const name of ['terminal', 'operations', 'layers']) {
+for (const name of ['terminal', 'operations', 'layers', 'seal']) {
   const p = join(root, `dist/photo/${name}.webp`)
   if (!existsSync(p)) {
     fail.push(`dist/photo/${name}.webp 가 없다 — 히어로 배경이 빈 채로 배포된다`)
