@@ -1,7 +1,7 @@
 /**
  * 빌드 산출물 검사 — 조용히 깨진 채로 배포되는 걸 막는다.
  */
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { DISCLAIMER_EN } from '../src/lib/disclaimer'
@@ -153,6 +153,30 @@ for (const f of ['dist/index.html', 'dist/hts.html', 'dist/section-301.html', 'd
   const html = read(f)
   if (html !== null && /(const|let)\s+CONFIG\s*=/.test(html)) {
     fail.push(`${f}: CONFIG 가 const/let 이다 — window.CONFIG 가 없어 계측이 죽는다 (var 로 둘 것)`)
+  }
+}
+
+// 에디토리얼은 사실 층과 의견 층을 분리한다 (docs/seo-indexing-policy.md §8).
+// 그 분리는 화면에 배지로 보여야 의미가 있다 — 독자가 어디까지가 데이터이고
+// 어디부터가 우리 베팅인지 구분할 수 있어야 한다. 템플릿을 고치다 배지가 빠지면
+// 글은 멀쩡히 나가고 구분만 사라진다. 조용한 실패라 빌드에서 막는다.
+const blogDir = join(root, 'dist/blog')
+if (existsSync(join(root, 'dist/blog.html'))) {
+  const posts = existsSync(blogDir) ? readdirSync(blogDir).filter((f) => f.endsWith('.html')) : []
+  if (posts.length === 0) fail.push('dist/blog.html 은 있는데 발행된 글이 없다')
+  for (const f of posts) {
+    const html = read(`dist/blog/${f}`)
+    if (html === null) continue
+    for (const [needle, why] of [
+      ['badge fact', '사실 층 배지가 없다'],
+      ['badge opinion', '의견 층 배지가 없다 — 추측이 사실처럼 읽힌다'],
+      ['id="cform"', '댓글 폼이 없다 — 답글을 보려고 만든 글이다'],
+      ['rel="canonical"', 'canonical 이 없다'],
+      ['/analytics.js', '퍼널 계측을 불러오지 않는다'],
+    ] as const) {
+      if (!html.includes(needle)) fail.push(`dist/blog/${f}: ${why}`)
+    }
+    if (!/href="\/hts\/\d{8}"/.test(html)) fail.push(`dist/blog/${f}: 코드 페이지 내부 링크가 없다 (정책 §8)`)
   }
 }
 

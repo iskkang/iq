@@ -14,6 +14,7 @@
  */
 import { chromium } from 'playwright'
 import { spawn } from 'node:child_process'
+import { readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import net from 'node:net'
@@ -152,6 +153,60 @@ for (const path of ['/', '/hts', '/section-301']) {
   const err = await page.textContent('.form-err').catch(() => null)
   expect(err && err.length > 0, '/: 저장이 실패했는데 사용자에게 아무 메시지도 없다')
   await page.close()
+}
+
+// ── 5. 에디토리얼 — 댓글은 이 기능의 존재 이유다 ────────────────
+{
+  const slug = readdirSync(join(root, 'blog'))
+    .filter((f) => f.endsWith('.html'))[0]
+    ?.replace(/\.html$/, '')
+  if (!slug) fails.push('blog/ 에 발행된 글이 없다')
+  else {
+    // 기존 댓글이 그려지는가
+    let postedBody = null
+    await ctx.route('**/rest/v1/blog_comments*', async (route) => {
+      if (route.request().method() === 'POST') {
+        postedBody = JSON.parse(route.request().postData() ?? '{}')
+        return route.fulfill({ status: 201, body: '' })
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ author: 'Existing <b>reader</b>', body: 'prior reply', created_at: '2026-08-01T00:00:00Z' }]),
+      })
+    })
+
+    const page = await visit(`/blog/${slug}`)
+    expect(seen.includes('page_view'), `/blog/${slug}: page_view 가 없다`)
+    const rendered = (await page.textContent('#cmts')) ?? ''
+    expect(rendered.includes('prior reply'), '기존 댓글이 그려지지 않았다')
+    // 방문자가 쓴 글이 그대로 HTML 이 되면 XSS 다
+    expect((await page.innerHTML('#cmts')).includes('&lt;b&gt;'), '댓글 작성자 이름이 escape 되지 않았다')
+
+    await page.fill('#cform input[name=author]', 'Smoke Tester')
+    await page.fill('#cform textarea[name=body]', 'This is a smoke reply.')
+    await page.click('#cform button')
+    await page.waitForTimeout(700)
+    expect(seen.includes('comment_submitted'), 'comment_submitted 가 없다')
+    expect(seen.includes('comment_posted'), 'comment_posted 가 없다')
+    expect(postedBody?.post_slug === slug, `댓글이 slug 없이 저장됐다: ${JSON.stringify(postedBody)}`)
+    await page.close()
+
+    // 저장 실패도 조용하지 않아야 한다
+    await ctx.route('**/rest/v1/blog_comments*', (route) =>
+      route.request().method() === 'POST'
+        ? route.fulfill({ status: 500, body: '{}' })
+        : route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+    )
+    const page2 = await visit(`/blog/${slug}`)
+    await page2.fill('#cform input[name=author]', 'Smoke Tester')
+    await page2.fill('#cform textarea[name=body]', 'This should fail.')
+    await page2.click('#cform button')
+    await page2.waitForTimeout(700)
+    expect(seen.includes('comment_failed'), 'comment_failed 가 없다')
+    expect(((await page2.textContent('#cerr')) ?? '').length > 0, '댓글 저장이 실패했는데 화면에 아무 말이 없다')
+    await page2.close()
+  }
 }
 
 await browser.close()
