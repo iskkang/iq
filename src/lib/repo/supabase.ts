@@ -3,6 +3,7 @@
  * 모든 쿼리는 anon key + 사용자 JWT로 실행되며 서버 정책이 격리를 보장한다.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { Subscription } from '../billing/plan'
 import type { FeeSettings, RateRow } from '../calc/types'
 import type { DutyProgram, ProgramExclusion } from '../calc/programs'
 import { resolveStatus } from '../classify/status'
@@ -242,6 +243,31 @@ export function createSupabaseRepo(url: string, anonKey: string): Repo & { clien
       const s = created as Shipment
       await this.addItems(s.id, SAMPLE_ITEMS)
       return s
+    },
+
+    async getSubscription(): Promise<Subscription | null> {
+      // RLS 로 자기 워크스페이스 행만 보인다 (subscriptions_select_own).
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .select('status, current_period_end, cancel_at_period_end')
+        .maybeSingle()
+      // 결제 상태를 못 읽는 것이 앱 전체를 세우면 안 된다 — 무료로 취급하고 넘어간다.
+      // (한도는 어차피 서버가 강제하므로 여기서 실패해도 뚫리지 않는다.)
+      if (error) return null
+      return (data as Subscription) ?? null
+    },
+
+    async startCheckout(): Promise<string> {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess.session?.access_token
+      if (!token) throw new Error('Sign in first.')
+      const res = await fetch(`${url}/functions/v1/stripe-checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: anonKey, Authorization: `Bearer ${token}` },
+      })
+      const body = (await res.json().catch(() => ({}))) as { url?: string; error?: string }
+      if (!res.ok || !body.url) throw new Error(body.error ?? `Checkout failed (${res.status})`)
+      return body.url
     },
 
     async getRates(): Promise<RateRow[]> {

@@ -19,6 +19,9 @@ on:
       - 'supabase/functions/**'
       - 'src/lib/calc/**'
       - 'src/lib/repo/**'
+      # stripe-webhook 이 서명 검증을 여기서 가져다 쓴다. 이 경로가 빠지면
+      # 자물쇠를 고쳐도 배포본은 옛 자물쇠로 계속 돈다.
+      - 'src/lib/billing/**'
       - '.github/workflows/deploy-functions.yml'
   workflow_dispatch:
 
@@ -57,16 +60,24 @@ jobs:
         with:
           version: latest
 
-      # 두 함수를 함께 올린다. 하나만 올리면 나머지가 같은 방식으로 갈라진다.
+      # 함수를 함께 올린다. 하나만 올리면 나머지가 같은 방식으로 갈라진다.
+      #
+      # stripe-webhook 만 --no-verify-jwt 다. Stripe 는 Supabase JWT 를 갖고 있지
+      # 않으므로 JWT 검증을 켜면 모든 웹훅이 401 로 떨어지고, 결제는 되는데
+      # 우리 DB 는 영원히 무료 상태로 남는다. 대신 그 함수는 요청마다 서명을
+      # 검증한다 (src/lib/billing/stripeSignature.ts).
       - name: Edge Function 배포
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          for fn in hts-lookup classify; do
+          for fn in hts-lookup classify stripe-checkout; do
             echo "::group::deploy $fn"
             supabase functions deploy "$fn" --project-ref "$PROJECT_REF"
             echo "::endgroup::"
           done
+          echo "::group::deploy stripe-webhook"
+          supabase functions deploy stripe-webhook --project-ref "$PROJECT_REF" --no-verify-jwt
+          echo "::endgroup::"
 
       # ── 배포되었다 ≠ 동작한다 ──────────────────────────────────────
       # 이 저장소에서 실제로 갈라진 적이 있으므로, 올린 뒤 **정말 새 코드가 도는지**

@@ -50,7 +50,7 @@ cost 쪽인데 **거기로는 광고 트래픽을 한 번도 보낸 적이 없�
 `/hts` 와 블로그에서 이미 고친 결함이 하필 이 페이지에만 남아 있었다.
 
   sample_cta_submitted   폼 제출
-  sample_saved           저장 성공  ← 이 광고그룹의 전환
+  sample_saved           저장 성공
   sample_failed          저장 실패 (사유 포함) + 화면 메시지
 
 `scripts/check-build.ts` 의 `FUNNEL_PAGES` 에 등록했다. 이 셋 중 하나라도 빠지면
@@ -158,7 +158,7 @@ Built by freight operators
 Base duty, Section 301 and fees separated by HTS line. See a full sample report first.
 Turn a duty rate into landed cost, true margin and the price you need per SKU.
 Official USITC data, effective-date aware. Unresolved coverage is flagged, not guessed.
-Free during validation. See the sample report before giving an email address.
+Free plan covers two shipments and 25 SKUs. Unlimited is $29/mo, cancel anytime.
 ```
 
 문안이 사이트가 실제로 하는 말과 같다 — `No silent zeroes` · `Effective-date aware`
@@ -172,11 +172,23 @@ Free during validation. See the sample report before giving an email address.
 
 ## 전환
 
-Ads 전환은 이미 붙어 있다 — `public/ads.js` 의 `sample` 라벨, 폼 저장 성공 시
-`window.trackConversion('sample')`.
+**전환은 `subscription_started` 다 — $29 결제.** 이메일이 아니다.
 
-우리 쪽 판정은 `sample_saved` 로 한다. Ads 전환과 별개로 세는 이유는, Ads 는
-클릭에 귀속된 전환만 보여주는데 우리는 **어디서 죽었는지**를 봐야 하기 때문이다.
+요금제가 생기기 전에는 이 광고그룹의 전환을 `sample_saved`(이메일 저장)로
+잡았다. 그 지표로는 답이 안 나온다 — 지난 캠페인이 정확히 그걸 재고 0 을 냈고,
+0 이 "수요가 없다" 인지 "제안이 약하다" 인지 구분되지 않았다. 카드가 긁히는
+순간만 그 질문에 답한다 (`docs/pricing-29.md`).
+
+    sample_saved            이메일 저장      (중간 단계)
+    checkout_started        결제창 열기      (중간 단계)
+    subscription_started    $29 결제         ← 전환
+
+Ads 전환도 붙어 있다 — 앱에서 `window.trackConversion('subscribe', 29)`.
+다만 지금은 가입 라벨을 같이 쓰므로 Ads 가 결제와 이메일을 구분하지 못한다.
+전용 전환 액션을 만드는 절차는 `docs/pricing-29.md` 4~5절에 있다.
+
+우리 쪽 판정을 따로 세는 이유는, Ads 는 클릭에 귀속된 전환만 보여주는데 우리는
+**어디서 죽었는지**를 봐야 하기 때문이다.
 
 ---
 
@@ -196,16 +208,19 @@ Ads 전환은 이미 붙어 있다 — `public/ads.js` 의 `sample` 라벨, 폼 
 | 관측 | 판단 |
 |---|---|
 | 클릭 20건에 `sample_cta_submitted` 0 | 착지 페이지가 의도와 안 맞는다 — 문구·레이아웃부터 |
-| `sample_failed` 가 성공보다 많다 | 저장 경로 고장 — **즉시 멈추고 고친다** |
+| `sample_failed` · `checkout_failed` 가 성공보다 많다 | 경로 고장 — **즉시 멈추고 고친다** |
+| `subscription_activation_slow` 이 있다 | 돈은 받았는데 화면이 안 열린 사람이 있다 — **최우선** |
+| `plan_limit_hit` 는 많은데 `checkout_started` 0 | 한도는 맞는데 $29 가 안 팔린다. 한도를 늘려서 풀 문제가 아니다 |
 | `page_view` 는 있는데 스크롤이 안 됨 | 첫 화면에서 이탈 — 히어로가 답을 안 준다 |
 
 **끝까지 갔을 때**
 
 | 결과 | 다음 |
 |---|---|
-| 전환 ≥ 3건 | 의도가 맞다. 예산을 늘리고 키워드를 넓힌다 |
-| 전환 0, 제출은 있음 | 폼 이후가 문제 — 제안(무료 베타)이 약하다 |
-| 제출도 0 | landed cost 의도도 이 제안으로는 안 팔린다. **광고가 아니라 고객 대화로 전환** |
+| 유료 ≥ 3건 | 의도가 맞다. 예산을 늘리고 키워드를 넓힌다 |
+| 유료 0, `checkout_started` 는 있음 | 결제창에서 떨어진다 — 가격 또는 결제 흐름 |
+| `checkout_started` 0, 가입은 있음 | 제품까지는 오는데 $29 를 안 낸다 — **가격 또는 제안** |
+| 가입도 0 | landed cost 의도도 이 제안으로는 안 팔린다. **광고가 아니라 고객 대화로 전환** |
 
 마지막 줄이 중요하다. 두 번째 테스트도 0 이면 문제는 키워드가 아니라 제안이고,
 그건 트래픽을 더 사서 알아낼 수 없다.
@@ -214,7 +229,8 @@ Ads 전환은 이미 붙어 있다 — `public/ads.js` 의 `sample` 라벨, 폼 
 
 ## 읽는 쿼리
 
-`supabase/funnel.sql` 을 쓴다. 이 광고그룹만 보려면 2번 쿼리에서:
+`supabase/funnel.sql` 을 쓴다. 유료 전환은 **7번 쿼리**다.
+이 광고그룹만 보려면 2번 쿼리에서:
 
 ```sql
 where a.campaign = 'landed_cost'

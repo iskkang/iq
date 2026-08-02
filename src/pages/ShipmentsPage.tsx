@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { PlanBanner } from '../components/PlanBanner'
+import { trackEvent } from '../lib/analytics'
+import { PLAN } from '../lib/billing/plan'
+import { usePlan } from '../lib/billing/usePlan'
 import { getRepo } from '../lib/repo'
 import type { NewShipment, Shipment } from '../lib/repo/types'
 import { SAMPLE_SHIPMENT_NAME } from '../lib/repo/sampleShipment'
@@ -24,6 +28,8 @@ export function ShipmentsPage() {
   const [form, setForm] = useState<NewShipment>({ ...DEFAULT_FORM, rate_as_of: today() })
   const [creating, setCreating] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const plan = usePlan()
+  const locked = plan.loaded && !plan.paid && shipments.length >= PLAN.free.shipments
 
   const reload = () => repo.listShipments().then(setShipments).catch((e) => setErr(String(e)))
 
@@ -51,7 +57,15 @@ export function ShipmentsPage() {
       const s = await repo.createShipment({ ...form, name: form.name || `Shipment ${today()}` })
       nav(`/shipment/${s.id}`)
     } catch (error) {
-      setErr(error instanceof Error ? error.message : String(error))
+      const raw = error instanceof Error ? error.message : String(error)
+      // 한도는 DB 트리거가 강제한다. 그 예외 문구가 그대로 나가면 사용자는
+      // 'FREE_LIMIT_SHIPMENTS' 를 읽게 된다 — 무슨 일이 났는지 알 수 없다.
+      if (raw.includes('FREE_LIMIT_SHIPMENTS')) {
+        trackEvent('plan_limit_hit', { limit: 'shipments' })
+        setErr(`The free plan covers ${PLAN.free.shipments} shipments. Subscribe (${PLAN.label}) to add more.`)
+      } else {
+        setErr(raw)
+      }
     } finally {
       setCreating(false)
     }
@@ -63,6 +77,7 @@ export function ShipmentsPage() {
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       <section>
         <h1 className="mb-4 text-xl font-semibold">Shipments</h1>
+        <PlanBanner plan={plan} shipmentCount={shipments.length} />
         {shipments.length === 0 ? (
           <p className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
             Setting up your sample shipment…
@@ -179,10 +194,10 @@ export function ShipmentsPage() {
           </label>
           {err && <p className="text-xs text-rose-600">{err}</p>}
           <button
-            disabled={creating}
+            disabled={creating || locked}
             className="w-full rounded-md bg-indigo-600 py-2 font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            {creating ? 'Creating…' : 'Create shipment'}
+            {creating ? 'Creating…' : locked ? `Subscribe to add more — ${PLAN.label}` : 'Create shipment'}
           </button>
         </form>
       </section>

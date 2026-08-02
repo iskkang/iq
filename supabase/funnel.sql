@@ -173,3 +173,51 @@ where event_name in ('hts_lookup_failed', 'watch_failed', 'signup_failed', 'sect
   and coalesce((properties->>'internal')::boolean, false) = false
 group by 1, 2
 order by n desc;
+
+
+-- ═══════════════════════════════════════════════════════════════
+-- 7. 유료 전환 — $29 요금제
+-- ═══════════════════════════════════════════════════════════════
+-- 지난 두 캠페인은 "이메일을 줄 것인가" 를 쟀다. 그 답이 나와도 사업이
+-- 되는지는 알 수 없었다. 이 쿼리가 재는 것은 **카드를 긁는가** 다.
+--
+-- 세션 단위로 센다. 한 사람이 결제창을 세 번 열었다 닫은 것과 세 사람이
+-- 한 번씩 연 것은 완전히 다른 이야기다.
+with s as (
+  select session_id,
+         max((event_name = 'page_view')::int)                    as viewed,
+         max((event_name = 'plan_limit_hit')::int)               as hit_limit,
+         max((event_name = 'checkout_started')::int)             as opened_checkout,
+         max((event_name = 'checkout_abandoned')::int)           as abandoned,
+         max((event_name = 'checkout_failed')::int)              as failed,
+         max((event_name = 'subscription_started')::int)         as subscribed,
+         max((event_name = 'subscription_activation_slow')::int) as slow_activation
+  from public.analytics_events
+  where occurred_at > now() - interval '30 days'
+  and coalesce((properties->>'internal')::boolean, false) = false
+  group by session_id
+)
+select
+  count(*)                  as sessions,
+  sum(hit_limit)            as hit_free_limit,
+  sum(opened_checkout)      as opened_checkout,
+  sum(abandoned)            as abandoned,
+  sum(failed)               as checkout_failed,
+  sum(subscribed)           as subscribed,
+  sum(slow_activation)      as slow_activation,
+  round(100.0 * sum(subscribed) / nullif(sum(opened_checkout), 0), 1) as pct_checkout_to_paid
+from s;
+
+-- 읽는 법:
+--   hit_free_limit 는 큰데 opened_checkout 가 0  → 한도는 맞는데 가격이 안 팔린다.
+--                                                   한도를 늘려서 풀 문제가 아니다
+--   opened_checkout 는 있는데 subscribed 가 0     → 결제창에서 떨어진다.
+--                                                   Stripe 대시보드의 이탈 지점을 볼 것
+--   checkout_failed 가 있다                       → 우리 쪽 설정 문제.
+--                                                   6번 쿼리에 checkout_failed 를 넣어 사유를 본다
+--   slow_activation 이 있다                       → 웹훅이 20초 안에 안 온다.
+--                                                   돈은 받았는데 화면이 안 열린 사람이 있다는 뜻 — 최우선
+
+-- 결제 상태의 실물은 여기 있다 (analytics 가 아니라 진짜 원장):
+--   select status, count(*), max(current_period_end)
+--   from public.subscriptions group by 1 order by 2 desc;
