@@ -1,0 +1,118 @@
+name: deploy-functions
+
+# 왜 있는가: Vercel 은 이 저장소에 연결돼 있어 정적 사이트를 자동 배포하지만,
+# **Supabase 는 저장소에 연결돼 있지 않다.** 그래서 Edge Function 은 사람이 손으로
+# `supabase functions deploy` 를 돌려야만 올라갔고, 실제로 배포본이 저장소와 갈라졌다 —
+# 프로덕션 응답에는 저장소 코드에 없는 `timing` 필드가 있었고, 그 상태로 조회 한 건에
+# 13.2초가 걸렸다 (DB 실행 시간은 40ms). 읽는 코드와 도는 코드가 다르면 진단이 성립하지
+# 않는다.
+#
+# 드리프트의 통로는 `supabase/functions/` 만이 아니다. 두 함수 모두
+# `src/lib/calc/*` 와 `src/lib/repo/*` 를 import 한다. 계산 규칙을 고치면 테스트는
+# 통과하고 Vercel 로 앱은 갱신되지만 **함수는 옛 로직으로 계속 돈다.** 그래서 그 경로도
+# 트리거에 넣는다.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'supabase/functions/**'
+      - 'src/lib/calc/**'
+      - 'src/lib/repo/**'
+      - '.github/workflows/deploy-functions.yml'
+  workflow_dispatch:
+
+# 배포는 겹치면 안 되고, 중간에 끊어도 안 된다 (반쯤 올라간 함수가 남는다).
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+env:
+  # 프로젝트 ref 는 비밀이 아니다 — 브라우저에 나가는 VITE_SUPABASE_URL 에 이미 들어 있다.
+  # 프로젝트를 옮기면 이 값을 바꾼다.
+  PROJECT_REF: hwcfjxwdmmlydnrfyjqk
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # 비밀이 없으면 **조용히 건너뛰지 않는다.** 이 저장소는 조용한 실패로 이미
+      # 두 번 다쳤다 (계측이 안 붙은 채 63클릭, 적용된 적 없는 마이그레이션).
+      # 배포가 안 될 거면 빨갛게 안 되는 편이 낫다.
+      - name: 배포 자격증명 확인
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN 시크릿이 없어 Edge Function 을 배포할 수 없습니다."
+            echo "::error::https://supabase.com/dashboard/account/tokens 에서 토큰을 만들고"
+            echo "::error::저장소 Settings → Secrets and variables → Actions 에 추가하세요."
+            exit 1
+          fi
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # 두 함수를 함께 올린다. 하나만 올리면 나머지가 같은 방식으로 갈라진다.
+      - name: Edge Function 배포
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          for fn in hts-lookup classify; do
+            echo "::group::deploy $fn"
+            supabase functions deploy "$fn" --project-ref "$PROJECT_REF"
+            echo "::endgroup::"
+          done
+
+      # ── 배포되었다 ≠ 동작한다 ──────────────────────────────────────
+      # 이 저장소에서 실제로 갈라진 적이 있으므로, 올린 뒤 **정말 새 코드가 도는지**
+      # 확인한다. 판별 기준은 응답 필드다: 저장소 코드는 `response_time_ms` 를 내고,
+      # 갈라져 있던 배포본은 `timing` 을 냈다.
+      #
+      # anon 키가 없으면 이 확인만 건너뛴다 — 배포 자체는 위에서 이미 끝났고 실패하면
+      # 빨갛게 죽는다. 건너뛸 때는 반드시 로그에 남긴다.
+      - name: 배포본이 실제로 응답하는가
+        env:
+          ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$ANON_KEY" ]; then
+            echo "::warning::SUPABASE_ANON_KEY 시크릿이 없어 배포 후 확인을 건너뜁니다."
+            echo "::warning::추가하면 '올라갔지만 동작하지 않는' 상태를 여기서 잡습니다."
+            exit 0
+          fi
+
+          body=$(curl -sS --max-time 30 \
+            -X POST "https://${PROJECT_REF}.supabase.co/functions/v1/hts-lookup" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${ANON_KEY}" \
+            -d '{"q":"6912"}')
+
+          echo "$body" | head -c 400; echo
+
+          # 결과가 비면 실패다. 6912 는 카탈로그에 반드시 있다.
+          count=$(echo "$body" | jq '.results | length // 0')
+          if [ "$count" -lt 1 ]; then
+            echo "::error::배포는 됐지만 조회가 0건입니다 — 응답: $(echo "$body" | head -c 200)"
+            exit 1
+          fi
+
+          # 옛 배포본 판별. `timing` 이 남아 있으면 새 코드가 안 올라간 것이다.
+          if echo "$body" | jq -e 'has("timing")' >/dev/null; then
+            echo "::error::응답에 timing 필드가 있습니다 — 저장소 코드가 아닌 옛 배포본이 돌고 있습니다."
+            exit 1
+          fi
+          if ! echo "$body" | jq -e 'has("response_time_ms")' >/dev/null; then
+            echo "::error::응답에 response_time_ms 가 없습니다 — 배포본이 저장소 코드와 다릅니다."
+            exit 1
+          fi
+
+          ms=$(echo "$body" | jq '.response_time_ms')
+          echo "조회 ${count}건 · 서버 ${ms}ms"
+          # 느린 것은 막지 않는다 — 원인이 아직 안 밝혀졌고, 배포를 세울 근거는 아니다.
+          if [ "$ms" -gt 3000 ]; then
+            echo "::warning::서버 응답 ${ms}ms — 사용자가 기다리기에 길다."
+          fi
