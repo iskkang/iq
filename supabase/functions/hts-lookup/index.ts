@@ -14,10 +14,17 @@ const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
+/**
+ * 캐시는 **성공 응답만** 받는다. 기본값이 `public, max-age=300` 이었을 때는
+ * 429·500·503 과 "결과 없음"까지 5분간 굳었다 — 레이트리밋에 걸린 사용자는
+ * 창이 풀린 뒤에도 계속 429 를 받고, 시딩 중이라 잠깐 비었던 응답이 데이터가
+ * 들어온 뒤에도 5분간 "결과 없음"으로 남는다. 실패를 캐시하면 복구가 안 보인다.
+ */
+const CACHE_OK = 'public, max-age=300'
 const json = (b: unknown, status = 200, extraHeaders: Record<string, string> = {}) =>
   new Response(JSON.stringify(b), {
     status,
-    headers: { ...cors, 'content-type': 'application/json', 'cache-control': 'public, max-age=300', ...extraHeaders },
+    headers: { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store', ...extraHeaders },
   })
 
 const admin = () =>
@@ -142,7 +149,7 @@ Deno.serve(async (req: Request) => {
       truncated: results.length >= MAX_RESULTS,
       response_time_ms: Math.round(performance.now() - startedAt),
       disclaimer: 'Estimates only — not customs, legal, or tax advice. Final HTS classification and duty liability are the responsibility of the importer of record.',
-    })
+    }, 200, { 'cache-control': CACHE_OK })
   } catch (e) {
     return json({ error: String(e), response_time_ms: Math.round(performance.now() - startedAt) }, 500)
   }
