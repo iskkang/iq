@@ -39,7 +39,8 @@
     "sample:check-inputs": "tsx scripts/check-sample-inputs.ts",
     "demo:record": "tsx scripts/record-demo.ts",
     "og:build": "node scripts/build-og-image.mjs",
-    "photo:build": "node scripts/build-photos.mjs"
+    "photo:build": "node scripts/build-photos.mjs",
+    "stripe:setup": "node scripts/stripe-setup.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.111.0",
